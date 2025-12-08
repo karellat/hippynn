@@ -1,6 +1,7 @@
 import torch
 from ... import custom_kernels
-from .tensors import HopInvariantLayer, TKHopInvariantLayer
+from .invariants import HopInvariantLayer
+from ... import settings
 import warnings
 
 
@@ -144,14 +145,10 @@ class InteractLayerVec(InteractLayer):
         n_atoms_real = in_features.shape[0]
         sense_vals = self.sensitivity(dist_pairs)
 
-        # Sensitivity stacking
-        sense_vec = sense_vals.unsqueeze(1) * (coord_pairs / dist_pairs.unsqueeze(1)).unsqueeze(2)
-        sense_vec = sense_vec.reshape(-1, self.n_dist * 3)
-        sense_stacked = torch.concatenate([sense_vals, sense_vec], dim=1)
-
         # Message passing, stack sensitivities to coalesce custom kernel call.
         # shape (n_atoms, n_nu + 3*n_nu, n_feat)
-        env_features_stacked = custom_kernels.envsum(sense_stacked, in_features, pair_first, pair_second)
+        env_features_stacked = custom_kernels.vecMessagePassing(in_features, sense_vals, pair_first, pair_second, dist_pairs, coord_pairs)
+
         # shape (n_atoms, 4, n_nu, n_feat)
         env_features_stacked = env_features_stacked.reshape(-1, 4, self.n_dist, self.nf_in)
 
@@ -199,22 +196,10 @@ class InteractLayerQuad(InteractLayerVec):
         # scalar: sense_vals
         # vector: sense_vec
         # quadrupole: sense_quad
-        rhats = coord_pairs / dist_pairs.unsqueeze(1)
-        sense_vec = sense_vals.unsqueeze(1) * rhats.unsqueeze(2)
-        sense_vec = sense_vec.reshape(-1, self.n_dist * 3)
-        rhatsquad = rhats.unsqueeze(1) * rhats.unsqueeze(2)
-        rhatsquad = (rhatsquad + rhatsquad.transpose(1, 2)) / 2
-        tr = torch.diagonal(rhatsquad, dim1=1, dim2=2).sum(dim=1) / 3.0  # Add divide by 3 early to save flops
-        tr = tr.unsqueeze(1).unsqueeze(2) * torch.eye(3, dtype=tr.dtype, device=tr.device).unsqueeze(0)
-        rhatsquad = rhatsquad - tr
-        rhatsqflat = rhatsquad.reshape(-1, 9)[:, self.upper_ind]  # Upper-diagonal part
-        sense_quad = sense_vals.unsqueeze(1) * rhatsqflat.unsqueeze(2)
-        sense_quad = sense_quad.reshape(-1, self.n_dist * 5)
-        sense_stacked = torch.concatenate([sense_vals, sense_vec, sense_quad], dim=1)
 
         # Message passing, stack sensitivities to coalesce custom kernel call.
         # shape (n_atoms, n_nu + 3*n_nu + 5*n_nu, n_feat)
-        env_features_stacked = custom_kernels.envsum(sense_stacked, in_features, pair_first, pair_second)
+        env_features_stacked = custom_kernels.quadMessagePassing(in_features, sense_vals, pair_first, pair_second, dist_pairs, coord_pairs, self.upper_ind)
         # shape (n_atoms, 9, n_nu, n_feat)
         env_features_stacked = env_features_stacked.reshape(-1, 9, self.n_dist, self.nf_in)
 
@@ -311,7 +296,8 @@ class HOPInteractionLayer(InteractLayer):
 
         self.n_invariants = n_invariants
         mixing_weights = torch.zeros(self.nf_out, self.n_invariants, self.nf_out)
-        self.invars = HopInvariantLayer(n_max=n_max, l_max=l_max)
+        self.invars = HopInvariantLayer(n_max, l_max)
+
         self.mixing_weights = torch.nn.Parameter(mixing_weights)
         torch.nn.init.xavier_normal_(self.mixing_weights)
         if group_norm:
@@ -321,88 +307,8 @@ class HOPInteractionLayer(InteractLayer):
 
     def forward(self, in_features, pair_first, pair_second, dist_pairs, tensor_rhats):
 
-        features_out_selfpart = self.selfint(in_features)
-
-        n_atoms_real = in_features.shape[0]
-        n_pair, n_tensor_comp = tensor_rhats.shape
-
-        # set up sensitivity for message passing
-        sense_scalar = self.sensitivity(dist_pairs)
-        sensitivity = sense_scalar.unsqueeze(1) * tensor_rhats.unsqueeze(2)
-        sense_flat = sensitivity.reshape(n_pair, n_tensor_comp * self.n_dist)
-
-        env_features = custom_kernels.envsum(sense_flat, in_features, pair_first, pair_second)
-
-        # apply weights to tensor features
-        weights_rs = torch.reshape(self.int_weights.permute(0, 2, 1), (self.n_dist * self.nf_in, self.nf_out))
-        env_rs = env_features.reshape(n_atoms_real * n_tensor_comp, self.n_dist * self.nf_in)
-        tensor_features = torch.mm(env_rs, weights_rs)
-        tensor_features = tensor_features.reshape(n_atoms_real, n_tensor_comp, self.nf_out)
-
-        # move tensor features to last dimension and compute invariants
-        # shape n_atom, n_feat, n_tensor
-        tensor_features = tensor_features.permute(0, 2, 1).reshape(n_atoms_real * self.nf_out, n_tensor_comp)
-
-        invariants = self.invars(tensor_features)
-        invariants = invariants.reshape(n_atoms_real, self.nf_out, self.n_invariants)
-
-        if self.group_norm:
-            # Group norm operates on n_batch, n_groups*n_features_per_group,
-            # so the group index (invariant index) should come first.
-            invariants = invariants.permute(0, 2, 1).reshape(n_atoms_real, self.n_invariants * self.nf_out)
-            normalized_invariants = self.group_norm(invariants)
-            # Restore shape/order; Put invariants last again.
-            normalized_invariants = normalized_invariants.reshape(n_atoms_real, self.n_invariants, self.nf_out)
-            normalized_invariants = normalized_invariants.permute(0, 2, 1)
-        else:
-            normalized_invariants = invariants
-
-        normalized_invariants = normalized_invariants.reshape(n_atoms_real, self.nf_out * self.n_invariants)
-
-        # (n_a,n_f*n_i) @ (n_f*n_i,n_f) -> (n_a, n_f)
-        mixing_features = normalized_invariants @ self.mixing_weights.reshape(-1, self.nf_out)
-
-        total_out = mixing_features + features_out_selfpart
-
-        return total_out
-
-
-class TKHOPInteractionLayer(InteractLayer):
-    def __init__(self, *args, inv_list, l_max, group_norm, group_norm_eps, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        if l_max < 0:
-            raise ValueError(f"{l_max=} must be a non-negative integer.")
-        
-        if inv_list is None:
-            assert l_max == 3, "If inv_list is None, l_max must be 3 to use all invariants."
-            warnings.warn(f"inv_list is None; defaulting to all invariants.")
-            self.inv_list = list(range(13))
-        else:
-            self.inv_list = inv_list
-
-        try:
-            n_invariants = len(self.inv_list)
-        except KeyError:
-            raise ValueError(f"HIP-HOP parameters {l_max=},{self.inv_list=} implementation not presently available.")
-
-        if n_invariants == 1:
-            warnings.warn(
-                f"Number of invariants is only 1 for HIP-HOP with ({self.inv_list=},{l_max=}); for these settings"
-                f" it may be preferable to use vanilla HIP-NN."
-            )
-
-        self.n_invariants = n_invariants
-        mixing_weights = torch.zeros(self.nf_out, self.n_invariants, self.nf_out)
-        self.invars = TKHopInvariantLayer(inv_list=self.inv_list, l_max=l_max)
-        self.mixing_weights = torch.nn.Parameter(mixing_weights)
-        torch.nn.init.xavier_normal_(self.mixing_weights)
-        if group_norm:
-            self.group_norm = torch.nn.GroupNorm(self.n_invariants, self.n_invariants * self.nf_out, eps=group_norm_eps, affine=True)
-        else:
-            self.group_norm = None
-
-    def forward(self, in_features, pair_first, pair_second, dist_pairs, tensor_rhats):
+        n_atoms = len(in_features)
+        import numpy as np
 
         features_out_selfpart = self.selfint(in_features)
 
@@ -411,10 +317,7 @@ class TKHOPInteractionLayer(InteractLayer):
 
         # set up sensitivity for message passing
         sense_scalar = self.sensitivity(dist_pairs)
-        sensitivity = sense_scalar.unsqueeze(1) * tensor_rhats.unsqueeze(2)
-        sense_flat = sensitivity.reshape(n_pair, n_tensor_comp * self.n_dist)
-
-        env_features = custom_kernels.envsum(sense_flat, in_features, pair_first, pair_second)
+        env_features = custom_kernels.hopMessagePassing(tensor_rhats, sense_scalar, in_features, pair_first, pair_second)
 
         # apply weights to tensor features
         weights_rs = torch.reshape(self.int_weights.permute(0, 2, 1), (self.n_dist * self.nf_in, self.nf_out))
