@@ -60,12 +60,14 @@ def hierarchical_energy_initialization(
     
         train_data = database.splits["train"]
 
+        # TODO: Make this sequential if dataset too large
         z_vals = train_data[species_name]
         t_vals = train_data[energy_name]
 
         encoder.to(t_vals.device)
         eovals = compute_hipnn_e0(encoder, z_vals, t_vals, peratom=peratom)
         eo_layer = energy_module.layers[0]
+        # TODO: Ends here
 
         if not eo_layer.weight.data.shape[-1] == eovals.shape[-1]:
             raise ValueError("The shape of the computed E0 values does not match the shape expected by the model.")
