@@ -120,17 +120,6 @@ if params.model_name.startswith("HipHopnn"):
                 network_params["n_max"] = int(part[1:])
             elif part.startswith("f"):
                 network_params["n_features"] = int(part[1:])
-elif params.model_name.startswith("TKHipHopnn"):
-    network_class = TKHipHopnn  
-    if "_" in params.model_name:
-        parts = params.model_name.split("_")
-        for part in parts[1:]:
-            if part.startswith("l"):
-                network_params["l_max"] = int(part[1:])
-            elif part.startswith("n"):
-                network_params["inv_list"] = list(map(int, part[1:].split(",")))
-            elif part.startswith("f"):
-                network_params["n_features"] = int(part[1:])
 else: 
     raise ValueError(f"Model name {params.model_name} not recognized.")
 

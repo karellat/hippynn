@@ -150,6 +150,3 @@ class HipnnQuad(HipnnVec):
 
 class HipHopnn(HipnnVec):
     _auto_module_class = network_modules.hiphop.HipHopNNModule
-
-class TKHipHopnn(HipnnVec):
-    _auto_module_class = network_modules.hiphop.TKHipHopNNModule

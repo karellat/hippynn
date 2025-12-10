@@ -108,7 +108,8 @@ def setup_and_train(
     setup_params: SetupParams,
     store_all_better=False,
     store_best=True,
-    store_every=0
+    store_every=0,
+    callbacks=None,
 ):
     """
     :param: training_modules: see :func:`setup_training`
@@ -141,7 +142,7 @@ def setup_and_train(
         database=database,
         controller=controller,
         metric_tracker=metric_tracker,
-        callbacks=None,
+        callbacks=callbacks,
         batch_callbacks=None,
         store_all_better=store_all_better,
         store_best=store_best,

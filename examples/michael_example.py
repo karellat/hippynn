@@ -1,34 +1,44 @@
 """
-allegro_ag_example.py
-
-Script trains a hippynn model based on Ag MD data.
-
-This example uses the AseDatabase Loader and thus requires the `ase` package.
-
-The database file is:
- - Ag_warm_nospin.xyz - https://archive.materialscloud.org/record/file?filename=Ag_warm_nospin.xyz&record_id=1387
-
-This file was released in conjunction with
-"Learning local equivariant representations for large-scale atomistic dynamics"
-Musaelian et al. 2023 Nat. Comm.
-https://doi.org/10.1038/s41467-023-36329-y
-
-Timing:
-    ~60 s/epoch@batch_size=128 on 4-core intel MacbookPro laptop.
-    ~4s/epoch@batch_size=128 on M1Max MacbookPro laptop.
-
+Michael Omol example 
 """
+
 import os
-import torch
 import time
+import torch
+import wandb
+import logging
+from fairchem.core.datasets import AseDBDataset
 
 import hippynn
 from hippynn.experiment import SetupParams, setup_and_train, test_model
 from hippynn.interfaces.ase_interface import AseDatabaseIterable
-from fairchem.core.datasets import AseDBDataset
+
+from hippynn.graphs import inputs, networks, targets, physics, loss
+from hippynn.graphs.nodes.loss import MSELoss, MAELoss, Rsq, Mean
+from hippynn.experiment.assembly import assemble_for_training
+from hippynn.pretraining import hierarchical_energy_initialization
+from hippynn.experiment.controllers import RaiseBatchSizeOnPlateau, PatienceController
 
 torch.set_default_dtype(torch.float32)
-hippynn.settings.WARN_LOW_DISTANCES = False
+hippynn.settings.WARN_LOW_DISTANCES = True
+# TODO: ask michael about this setting
+# 
+
+class TomasWandbLogger():
+    def __init__(self, metric_tracker, wandb_run):
+        self.metric_tracker = metric_tracker
+        self.run = wandb_run
+
+    def __call__(self, epoch, better_model):
+        tracker = self.metric_tracker
+        assert epoch == (tracker.current_epoch - 1)
+        current_metrics = tracker.epoch_metric_values[epoch]
+        for split, metrics in current_metrics.items():
+            for key, value in metrics.items():
+                self.run.log({f"{split}-{key}": value}, step=epoch)
+        for key, value in tracker.best_metric_values.items():
+            self.run.summary[f"Best-{key}"] = value
+
 
 max_epochs = 500
 
@@ -76,10 +86,10 @@ def stream_conversion_generator(fairchem_db):
 def setup_network(network_params):
 
     # Hyperparameters for the network
-    print("Network hyperparameters:")
-    print(network_params)
+    logging.debug("Network hyperparameters:")
+    logging.debug(network_params)
 
-    from hippynn.graphs import inputs, networks, targets, physics
+    
 
     species = inputs.SpeciesNode(db_name="numbers")
     positions = inputs.PositionsNode(db_name="positions")
@@ -96,8 +106,7 @@ def setup_network(network_params):
     force.db_name = "forces"
 
 
-    from hippynn.graphs import loss
-    from hippynn.graphs.nodes.loss import MSELoss, MAELoss, Rsq, Mean
+    
 
     validation_losses = {
     "T-MAE":MAELoss.of_node(sys_energy),
@@ -110,7 +119,6 @@ def setup_network(network_params):
 
     # Factors of 1e3 for meV
 
-    from hippynn.experiment.assembly import assemble_for_training
     training_modules, db_info = assemble_for_training(train_loss, validation_losses)
     
     return henergy, training_modules, db_info
@@ -119,10 +127,7 @@ def fit_model(training_modules,database):
 
     model, loss_module, model_evaluator = training_modules
 
-    from hippynn.pretraining import hierarchical_energy_initialization
     hierarchical_energy_initialization(henergy, database, peratom=False, energy_name="energy", decay_factor=1e-2)
-
-    from hippynn.experiment.controllers import RaiseBatchSizeOnPlateau, PatienceController
 
     optimizer = torch.optim.Adam(training_modules.model.parameters(), lr=1e-3)
 
@@ -142,15 +147,13 @@ def fit_model(training_modules,database):
         termination_patience=50,
         stopping_key=early_stopping_key,
     )
-
-
     experiment_params = SetupParams(controller=controller)
 
-    print("Experiment Params:")
-    print(experiment_params)
+    logging.info("Experiment Params set")
+    logging.debug("%s", experiment_params)
 
     # Parameters describing the training procedure.
-    print(controller.current_epoch)
+    logging.debug("Current controller epoch: %s", controller.current_epoch)
     sTime = time.time()
 
     setup_and_train(
@@ -165,45 +168,43 @@ def fit_model(training_modules,database):
 
     with hippynn.tools.log_terminal("model_results.txt",'wt'):
         test_model(database, training_modules.evaluator, 128, "Final Training")
-        print("FOM Average Epoch time: {:12.8f}".format(EpTime))
-    
+        logging.info("FOM Average Epoch time: %12.8f", EpTime)
 
 if __name__=="__main__":
-    print("Setting up model.")
-    henergy, training_modules, db_info = setup_network(network_params)
+    logging.info("Set-Up Wandb connection.")
+    wandb_settings = wandb.Settings(_disable_stats=True, save_code=False, _disable_meta=True,x_save_requirements=False)
 
-    ### Read in the dataset you wish to submit predictions to
-    dataset = AseDBDataset({"src": "/vast/home/mgt16/train_4M"})
-    
-    print(db_info)
-    print("Preparing dataset.")
+    with wandb.init(project="hiphop-omol", settings=wandb_settings, entity="karella", config=network_params) as wandb_run:
+        logging.info("Setting up model.")
+        henergy, training_modules, db_info = setup_network(network_params)
+        # TODO: Watch the model.
 
-    gen = stream_conversion_generator(dataset[0:first_n])
+        ### Read in the dataset you wish to submit predictions to
+        dataset = AseDBDataset({"src": "/home/karella/Projects/hippynn/train_4M"})  
+        logging.debug("%s", db_info)
+        logging.info("Preparing dataset.")
 
-    database = AseDatabaseIterable(
-        iterable=gen,
-        seed=1001,  # Random seed for splitting data
-        quiet=False,
-        pin_memory=False,
-        test_size=test_size,
-        valid_size=valid_size,
-        **db_info)
-    
-    database.send_to_device() # Send to GPU if available
+        gen = stream_conversion_generator(dataset)#[0:first_n])
 
-    print("Training model")
-    with hippynn.tools.active_directory("model_files"):
-        fit_model(training_modules,database)
-    
-    print("Writing test results")
-    with hippynn.tools.log_terminal("model_results.txt",'wt'):
-        test_model(database, training_modules.evaluator, 128, "Final Training")
-    
-    ## Possible to export lammps MLIPInterface for model if Lammps with MLIP Installed!
-    # print("Exporting lammps interface")
-    # first_frame = ase.io.read(dbname) # Reads in first frame only for saving box
-    # ase.io.write('ag_box.data', first_frame, format='lammps-data')
-    # from hippynn.interfaces.lammps_interface import MLIAPInterface
-    # unified = MLIAPInterface(henergy, ["Ag"], model_device=torch.cuda.current_device())
-    # torch.save(unified, "hippynn_lammps_model.pt")    
-    print("All done.")
+        database = AseDatabaseIterable(
+            iterable=gen,
+            seed=1001,  # Random seed for splitting data
+            quiet=False,
+            pin_memory=False,
+            test_size=test_size,
+            valid_size=valid_size,
+            **db_info)
+        
+        database.send_to_device() # Send to GPU if available
+
+        logging.info("Training model")
+        with hippynn.tools.active_directory("model_files"):
+            fit_model(training_modules,database)
+        
+        logging.info("Writing test results")
+        with hippynn.tools.log_terminal("model_results.txt",'wt'):
+            test_model(database, training_modules.evaluator, 128, "Final Training")
+        
+        logging.info("All done.")
+
+# TODO: Ask Michael about deleted code. 
