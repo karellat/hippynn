@@ -14,6 +14,7 @@ from ..layers.hiplayers import (
     InteractLayerQuad,
 )
 from ..layers.transform import ResNetWrapper
+#from ..databases import _Database
 
 
 # computes E0 for the energy layer.
@@ -57,6 +58,21 @@ def compute_hipnn_e0(encoder, Z_Data, en_data, peratom=False, fit_dtype=torch.fl
     e_per_species = e_per_species.to(original_dtype)
     return e_per_species
 
+# computes E0 for the energy layer.
+def compute_hipnn_e0_sequentially(encoder,
+                                  database,
+                                  peratom=False,
+                                  fit_dtype=torch.float64):
+
+    """
+    :param Z_Data: species data
+    :param database: database with energy data, expecting train_dataloader
+    :param peratom: whether energy is per-atom or total
+    :return: energy per species as shape (n_features_encoded, 1)
+    """ 
+
+
+    raise NotImplementedError("Hierarchical energy initialization for databases that does not fit into memory is not yet implemented.")
 
 class Hipnn(torch.nn.Module):
     """

@@ -13,7 +13,7 @@ from .graphs.nodes.inputs import SpeciesNode, PositionsNode, CellNode, ForceNode
 from .graphs.nodes.pairs import OpenPairIndexer, DynamicPeriodicPairs, MinDistNode
 from .graphs.nodes.indexers import acquire_encoding_padding, SysMaxOfAtomsNode
 from .graphs.nodes.physics import VecMag
-from .networks.hipnn import compute_hipnn_e0
+from .networks.hipnn import compute_hipnn_e0, compute_hipnn_e0_sequentially
 
 
 def hierarchical_energy_initialization(
@@ -58,13 +58,18 @@ def hierarchical_energy_initialization(
         if database is None:
             raise ValueError("Database must be provided if model includes E0 energy term.")
     
-        train_data = database.splits["train"]
+        if database.is_in_memory: 
+            train_data = database.splits["train"]
 
-        z_vals = train_data[species_name]
-        t_vals = train_data[energy_name]
+            z_vals = train_data[species_name]
+            t_vals = train_data[energy_name]
 
-        encoder.to(t_vals.device)
-        eovals = compute_hipnn_e0(encoder, z_vals, t_vals, peratom=peratom)
+            encoder.to(t_vals.device)
+            eovals = compute_hipnn_e0(encoder, z_vals, t_vals, peratom=peratom)
+        else: 
+            eovals = compute_hipnn_e0_sequentially(encoder, database, peratom=peratom)
+
+        # Set E0 layer weights
         eo_layer = energy_module.layers[0]
 
         if not eo_layer.weight.data.shape[-1] == eovals.shape[-1]:

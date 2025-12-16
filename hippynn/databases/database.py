@@ -2,6 +2,7 @@
 Base database functionality from dictionary of numpy arrays
 """
 
+from abc import abstractmethod, ABC
 from typing import Union
 import warnings
 import numpy as np
@@ -17,7 +18,60 @@ from collections import defaultdict
 
 _AUTO_SPLIT_PREFIX = "split_mask_"
 
-class Database:
+class _Database(ABC): 
+    def __init__(self):
+        super().__init__()
+
+        # Check inputs and targets are defined in subclass
+        for attr in ("inputs", "targets"):
+            if not hasattr(self, attr):
+                raise AttributeError(f"Database missing required attribute: {attr}")
+            elif not isinstance(getattr(self, attr), list):
+                raise TypeError(f"Database attribute {attr} must be a list of strings.")
+            else:
+                for item in getattr(self, attr):
+                    if not isinstance(item, str):
+                        raise TypeError(f"All elements of {attr} must be strings.")
+
+    @property
+    @abstractmethod 
+    def is_in_memory(self) -> bool:
+        """
+        Return whether the database is fully in memory.
+
+        :return: True if the database is fully in memory.
+        :rtype: bool
+        """
+        # Default implementation assumes in-memory database.
+        return True
+
+    @property
+    @abstractmethod
+    def var_list(self) -> list[str]:
+        """
+        Return a list of variables that will be given as batch data to the model. Usually [input + targets]
+        :param self: Database class that provides data loader for different splits
+        :return: list of variable names ordered typically as [inputs + targets] 
+        :rtype: list[str]
+        """
+        raise NotImplementedError("Subclasses must implement var_list property.")
+    
+    @abstractmethod
+    def make_generator(self,
+                        split_name: str,
+                       **kwargs) -> DataLoader:
+         """
+         Make a data loader for the given split name.
+         
+         :param self: Database class that provides data loader for different splits
+         :param split_name: str; name of the split to make generator for
+         :param kwargs: additional arguments for data loader creation
+         :return: DataLoader for the specified split 
+         """
+
+         raise NotImplementedError("Subclasses must implement make_generator method.")
+
+class Database(_Database):
     """
     Class for holding a pytorch dataset, splitting it, generating dataloaders, etc."
     """
@@ -55,6 +109,7 @@ class Database:
            Refer to pytorch documentation for details.
         :param quiet: If True, print little or nothing while loading.
         """
+        super().__init__()
 
         # Restartable Children of this class should change this after calling super().__init__() .
         self.restarter = NoRestart()
@@ -146,6 +201,10 @@ class Database:
 
     def __len__(self):
         return arrdict_len(self.arr_dict)
+    
+    @property
+    def is_in_memory(self) -> bool:
+        return True
 
     @property
     def var_list(self):
