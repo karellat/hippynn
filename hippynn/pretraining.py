@@ -71,6 +71,7 @@ def hierarchical_energy_initialization(
 
         # Set E0 layer weights
         eo_layer = energy_module.layers[0]
+        # TODO: Ends here
 
         if not eo_layer.weight.data.shape[-1] == eovals.shape[-1]:
             raise ValueError("The shape of the computed E0 values does not match the shape expected by the model.")
