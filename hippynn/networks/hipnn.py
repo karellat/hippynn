@@ -61,7 +61,10 @@ def compute_hipnn_e0(encoder, Z_Data, en_data, peratom=False, fit_dtype=torch.fl
 # computes E0 for the energy layer.
 def compute_hipnn_e0_sequentially(encoder,
                                   database,
+                                  species_name, 
+                                  energy_name,
                                   peratom=False,
+                                  batch_size=128,
                                   fit_dtype=torch.float64):
 
     """
@@ -70,9 +73,40 @@ def compute_hipnn_e0_sequentially(encoder,
     :param peratom: whether energy is per-atom or total
     :return: energy per species as shape (n_features_encoded, 1)
     """ 
+    # Create a dataloader, check that database is type _Database 
+    assert isinstance(database, _Database), "Database must be of type _Database to use sequential E0 computation."
+    train_dataloader = database.make_generator(split="train", batch_size=batch_size)
+    assert energy_name in database.data_keys, f"Energy name {energy_name} not found in database data keys {database.data_keys}"
+    assert species_name in database.data_keys, f"Species name {species_name} not found in database data keys {database.data_keys}"
+    energy_idx = database.data_keys.index(energy_name)
+    species_idx = database.data_keys.index(species_name)
+    # TODO: Get D from encoder maybe 
+                 # D is number of species
+    XtX = None   # [D, D]
+    Xty = None   # [D, n_targets]
+ 
+    original_dtype = None
+    for batch in train_dataloader:
+        z_vals = batch[species_idx]
+        y = batch[energy_idx]
 
+        original_dtype = y.dtype if original_dtype is None else original_dtype
+        y = y.to(fit_dtype)
+        x, nonblank = encoder(z_vals)
 
-    raise NotImplementedError("Hierarchical energy initialization for databases that does not fit into memory is not yet implemented.")
+        # Accumulate X^T X: [D, D], X^T y: [D, n_targets]
+        if xTx is None:
+            xTx = x.T @ x 
+            xTy = x.T @ y
+        else: 
+            xTx += x.T @ x
+            xTy += x.T @ y
+
+    # Solve Weights
+    e_per_species = torch.linalg.solve(xTx, xTy)
+    e_per_species = e_per_species.to(original_dtype)
+
+    return e_per_species
 
 class Hipnn(torch.nn.Module):
     """

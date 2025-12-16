@@ -1,5 +1,6 @@
 import torch
 from tqdm import tqdm
+import lightning as pl
 
 from hippynn.experiment.routines import SetupParams
 from hippynn.graphs import inputs, networks, targets, physics
@@ -79,6 +80,7 @@ with active_directory(TEST_DIR):
         )
 
         # TODO: This must be made sequential
+        # TODO: Test this on some dataset that can be fitted into memory and compare
         hierarchical_energy_initialization(henergy, database, trainable_after=False)
 
         # Parameters describing the training procedure.
@@ -97,3 +99,22 @@ with active_directory(TEST_DIR):
             training_modules=training_modules,
             database=database,
             experiment_params=experiment_params)
+# Run the Lightning Module
+# Try out the lightning callbacks and parallel logging
+
+# lightning needs to run exactly where the script is located in distributed modes.
+lightmod, datamodule = HippynnLightningModule.from_experiment_setup(training_modules, 
+                                                                    database, 
+                                                                    experiment_params)
+# Init ModelCheckpoint callback, monitoring 'val_loss'
+# checkpoint_callback = ModelCheckpoint(monitor="val_loss")
+# TODO: https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.loggers.wandb.html
+
+
+trainer = pl.Trainer(accelerator='gpu',
+                     devices=2, 
+                     strategy="ddp",
+                     callbacks=[], # Callbacks in WanDB 
+                     use_distributed_sampler=True)
+
+trainer.fit(model=lightmod, datamodule=datamodule)

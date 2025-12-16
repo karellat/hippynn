@@ -59,6 +59,7 @@ def hierarchical_energy_initialization(
             raise ValueError("Database must be provided if model includes E0 energy term.")
     
         if database.is_in_memory: 
+            # Load all training data at once
             train_data = database.splits["train"]
 
             z_vals = train_data[species_name]
@@ -67,12 +68,15 @@ def hierarchical_energy_initialization(
             encoder.to(t_vals.device)
             eovals = compute_hipnn_e0(encoder, z_vals, t_vals, peratom=peratom)
         else: 
-            eovals = compute_hipnn_e0_sequentially(encoder, database, peratom=peratom)
+            # Load all training data sequentially to avoid memory issues
+            eovals = compute_hipnn_e0_sequentially(encoder,
+                                                   database,
+                                                   species_name=species_name,
+                                                   energy_name=energy_name,
+                                                   peratom=peratom)
 
         # Set E0 layer weights
         eo_layer = energy_module.layers[0]
-        # TODO: Ends here
-
         if not eo_layer.weight.data.shape[-1] == eovals.shape[-1]:
             raise ValueError("The shape of the computed E0 values does not match the shape expected by the model.")
         

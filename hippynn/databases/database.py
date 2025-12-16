@@ -58,7 +58,8 @@ class _Database(ABC):
     
     @abstractmethod
     def make_generator(self,
-                        split_name: str,
+                       split_name: str,
+                       batch_size: int,
                        **kwargs) -> DataLoader:
          """
          Make a data loader for the given split name.
