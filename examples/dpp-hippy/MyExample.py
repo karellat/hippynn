@@ -1,6 +1,6 @@
 import torch
 from tqdm import tqdm
-import lightning as pl
+import pytorch_lightning as pl
 
 from hippynn.experiment.routines import SetupParams
 from hippynn.graphs import inputs, networks, targets, physics
@@ -20,8 +20,10 @@ VAL_PATH = "/home/karella/Projects/hippynn/val"
 TEST_PATH = "/home/karella/Projects/hippynn/test"
 
 MAX_EPOCHS = 50
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 LR_RATE = 0.001
+
+N_ATOM_MAX = 350
 
 NETWORK_PARAMS = {
     "possible_species": list(range(90)),
@@ -76,11 +78,13 @@ with active_directory(TEST_DIR):
             training_asedb_path=TRAIN_PATH,
             validation_asedb_path=VAL_PATH,
             test_asedb_path=TEST_PATH,
-            dataloader_kwargs={},
+            n_atoms_max=N_ATOM_MAX,
+            dataloader_kwargs={'num_workers': 2},
         )
 
         # TODO: This must be made sequential
         # TODO: Test this on some dataset that can be fitted into memory and compare
+        # TODO: This seems to be called in the trainer too. 
         hierarchical_energy_initialization(henergy, database, trainable_after=False)
 
         # Parameters describing the training procedure.
@@ -95,10 +99,10 @@ with active_directory(TEST_DIR):
         )
 
         # (*) For debubging purposes try to run directly 
-        setup_and_train(
-            training_modules=training_modules,
-            database=database,
-            experiment_params=experiment_params)
+        #setup_and_train(
+        #    training_modules=training_modules,
+        #    database=database,
+        #    experiment_params=experiment_params)
 # Run the Lightning Module
 # Try out the lightning callbacks and parallel logging
 

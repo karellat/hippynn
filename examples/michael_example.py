@@ -184,7 +184,7 @@ if __name__=="__main__":
         logging.debug("%s", db_info)
         logging.info("Preparing dataset.")
 
-        gen = stream_conversion_generator(dataset)#[0:first_n])
+        gen = stream_conversion_generator(dataset[0:first_n])
 
         database = AseDatabaseIterable(
             iterable=gen,

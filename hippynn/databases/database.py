@@ -60,12 +60,15 @@ class _Database(ABC):
     def make_generator(self,
                        split_name: str,
                        batch_size: int,
+                       evaluation_mode: str,
                        **kwargs) -> DataLoader:
          """
          Make a data loader for the given split name.
          
          :param self: Database class that provides data loader for different splits
          :param split_name: str; name of the split to make generator for
+         :param batch_size: int; batch size for data loader
+         :param evaluation_mode: str; "train" or "eval". Used for whether to shuffle.
          :param kwargs: additional arguments for data loader creation
          :return: DataLoader for the specified split 
          """
@@ -110,7 +113,6 @@ class Database(_Database):
            Refer to pytorch documentation for details.
         :param quiet: If True, print little or nothing while loading.
         """
-        super().__init__()
 
         # Restartable Children of this class should change this after calling super().__init__() .
         self.restarter = NoRestart()
@@ -122,6 +124,10 @@ class Database(_Database):
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.auto_split = auto_split
+
+        # Init inputs and targets before calling constructor
+        # FIXME: Maybe add inputs and targets to constructor args?
+        super().__init__()
 
         self.arr_dict = {}
         for k, v in arr_dict.items():

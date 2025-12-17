@@ -13,7 +13,7 @@ import scipy.io
 import numpy as np
 
 dataname = "qm7"
-matobj = scipy.io.loadmat(dataname+'.mat')
+matobj = scipy.io.loadmat("/home/karella/Projects/hippynn/dataset/qm7.mat")
 arrays = []
 
 for key, item in matobj.items():
