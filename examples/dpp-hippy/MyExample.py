@@ -1,5 +1,5 @@
+import os
 import torch
-from tqdm import tqdm
 import pytorch_lightning as pl
 
 from hippynn.experiment.routines import SetupParams
@@ -18,6 +18,7 @@ TEST_DIR = "/home/karella/Projects/hippynn/examples/dpp-hippy/test_folder"
 TRAIN_PATH = "/home/karella/Projects/hippynn/train_4M"
 VAL_PATH = "/home/karella/Projects/hippynn/val"
 TEST_PATH = "/home/karella/Projects/hippynn/test"
+HENERGY_INIT_PATH = "/home/karella/Projects/examples/dpp-hippy/test_folder/omol4M_hierarchical_energy_init.pt"
 
 MAX_EPOCHS = 50
 BATCH_SIZE = 16
@@ -79,13 +80,23 @@ with active_directory(TEST_DIR):
             validation_asedb_path=VAL_PATH,
             test_asedb_path=TEST_PATH,
             n_atoms_max=N_ATOM_MAX,
-            dataloader_kwargs={'num_workers': 2},
+            dataloader_kwargs={'num_workers': 12},
         )
 
         # TODO: This must be made sequential
         # TODO: Test this on some dataset that can be fitted into memory and compare
         # TODO: This seems to be called in the trainer too. 
-        hierarchical_energy_initialization(henergy, database, trainable_after=False)
+        if not os.path.exists(HENERGY_INIT_PATH):
+            print("Initializing hierarchical energy...")
+            hierarchical_energy_initialization(henergy, database, trainable_after=False)
+            torch.save(henergy, HENERGY_INIT_PATH)
+            print(f"Hierarchical energy initialization saved to {HENERGY_INIT_PATH}")
+        else:
+            print(f"Loading hierarchical energy from {HENERGY_INIT_PATH}")
+            henergy_loaded = torch.load(HENERGY_INIT_PATH)
+            henergy.load_state_dict(henergy_loaded.state_dict())
+            print("Hierarchical energy loaded successfully")
+        
 
         # Parameters describing the training procedure.
         experiment_params = SetupParams(
