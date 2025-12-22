@@ -46,15 +46,18 @@ class _Database(ABC):
         return True
 
     @property
-    @abstractmethod
-    def var_list(self) -> list[str]:
+    def var_list(self):
         """
         Return a list of variables that will be given as batch data to the model. Usually [input + targets]
         :param self: Database class that provides data loader for different splits
         :return: list of variable names ordered typically as [inputs + targets] 
         :rtype: list[str]
         """
-        raise NotImplementedError("Subclasses must implement var_list property.")
+        if self.inputs is None:
+            raise RuntimeError(f"Database inputs not defined, set {Database}.inputs.")
+        if self.targets is None:
+            raise RuntimeError(f"Database inputs not defined, set {Database}.targets.")
+        return self.inputs + self.targets
     
     @abstractmethod
     def make_generator(self,

@@ -31,53 +31,81 @@ class Omol25Database(_Database):
     """
     def _hippynn_collate_fn(self, data_list: list[AtomicData], exclude_keys: Optional[list] = None) -> list:   
         """Convert a list of AtomicData objects into a batched AtomicData object."""
-        # Using fairchem utility function
-        atomic_numbers = []
-        positions = []
-        energies = []
-        forces = []
-
+        out_batch = {
+            self._atomic_numbers: [],
+            self._pos: [],
+            self._energy: [],
+            self._forces: []
+        }
         for mol in data_list:
             padding_length = self.n_atoms_max - mol.natoms
-            atomic_numbers.append(pad(mol.atomic_numbers, (0, padding_length), value=0))
-            positions.append(pad(mol.pos, (0, 0, 0, padding_length), value=0.0))
-            energies.append(mol.energy)
-            forces.append(pad(mol.forces, (0, 0, 0, padding_length), value=0.0))
-        atomic_numbers = torch.stack(atomic_numbers).to(torch.int32)
-        positions = torch.stack(positions).to(torch.get_default_dtype())
-        energies = torch.stack(energies).to(torch.get_default_dtype())
-        forces = torch.stack(forces).to(torch.get_default_dtype())
-        return [atomic_numbers, positions, energies, forces]
+            out_batch[self._atomic_numbers].append(pad(mol.atomic_numbers, (0, padding_length), value=0))
+            out_batch[self._pos].append(pad(mol.pos, (0, 0, 0, padding_length), value=0.0))
+            out_batch[self._energy].append(mol.energy)
+            out_batch[self._forces].append(pad(mol.forces, (0, 0, 0, padding_length), value=0.0))
+        
+        out_batch[self._atomic_numbers] = torch.stack(out_batch[self._atomic_numbers]).to(torch.int32)
+        out_batch[self._pos] = torch.stack(out_batch[self._pos]).to(torch.get_default_dtype())
+        out_batch[self._energy] = torch.stack(out_batch[self._energy]).to(torch.get_default_dtype())
+        out_batch[self._forces] = torch.stack(out_batch[self._forces]).to(torch.get_default_dtype())
+        
+        return [out_batch[var_name] for var_name in self.var_list]
 
     @property
     def is_in_memory(self) -> bool:
         return False
 
     @property
-    def inputs(self) -> list[str]:
-        return ["atomic_numbers", "pos"]
-
-    @property
-    def targets(self) -> list[str]:
-        return ["energy", "forces"]
-
-    @property
-    def var_list(self) -> list[str]:
-        return self.inputs + self.targets
-    
-    @property
     def splits(self) -> list[str]:
         return ["train", "valid", "test"]
 
+    @property
+    def inputs(self) -> list:
+        return self._inputs
+    
+    @inputs.setter
+    def inputs(self, value: list) -> None:
+        valid_names = {"atomic_numbers", "pos", "energy", "forces"}
+        if not all(name in valid_names for name in value):
+            raise ValueError(f"Invalid input names. Valid names are: {valid_names}")
+        self._inputs = value
+    
+    @property
+    def targets(self) -> list:
+        return self._targets
+    
+    @targets.setter
+    def targets(self, value: list) -> None:
+        valid_names = {"atomic_numbers", "pos", "energy", "forces"}
+        if not all(name in valid_names for name in value):
+            raise ValueError(f"Invalid target names. Valid names are: {valid_names}")
+        self._targets = value
+
     def __init__(self,
+                 db_inputs: list[str],
+                 db_targets: list[str],
                  training_asedb_path: str, 
                  validation_asedb_path: str,
                  test_asedb_path: str,
                  n_atoms_max: Optional[int] = None,
                  dataloader_kwargs: dict = {}):
+
+        # Set default inputs and targets 
+        self._atomic_numbers = "atomic_numbers"
+        self._pos = "pos"
+        self._energy = "energy"
+        self._forces = "forces"
+
+        self._inputs = []
+        self._targets = []
         super().__init__()
         self.AseDBDatasets = dict()
+        self.inputs = db_inputs
+        self.targets = db_targets
 
+        # order the inpus and targets
+
+        
         _labels = dict(train=training_asedb_path,
                        valid=validation_asedb_path, 
                        test=test_asedb_path)
@@ -132,6 +160,7 @@ class Omol25Database(_Database):
                        split_name: str, 
                        evaluation_mode: str,
                        batch_size: int):
+        assert split_name != 'test', "Test generator is not supported. Omol25 test set does not have energies."
         assert evaluation_mode in ["train", "eval"], "evaluation_mode must be 'train' or 'eval'"
         if split_name not in self.splits:
             raise ValueError(f"Split {split_name} Invalid. Current splits:{list(self.splits)}")
