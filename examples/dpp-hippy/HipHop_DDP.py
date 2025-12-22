@@ -15,10 +15,12 @@ from hippynn.experiment.assembly import assemble_for_training
 from hippynn.tools import active_directory, log_terminal
 from hippynn.experiment import HippynnLightningModule
 from hippynn.pretraining import hierarchical_energy_initialization
-from hippynn.plotting import Hist2D, SensitivityPlot, PlotMaker
-# TODO: Source code 
+from hippynn.plotting import SensitivityPlot, PlotMaker
 from Omol25_database import Omol25Database
 
+# TODO: List 
+# - Add test evaluation after training
+# - Fix indexers to work without knowing n_max_atoms in advance
 
 def parse_args():
     parser = argparse.ArgumentParser(description="HipHopNN Training Script")
