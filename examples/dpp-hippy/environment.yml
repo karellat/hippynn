@@ -1,0 +1,12 @@
+name: hippy-omol
+dependencies:
+  - python=3.14.*
+  - pip
+  - pip:
+    - torch==2.8.*
+    - torchvision==0.23.*
+    - lightning==2.6.*
+    - wandb==0.23.*
+    - numpy==2.3.*
+    - fairchem-core==2.13.*
+    - ase==3.26.*

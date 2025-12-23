@@ -7,19 +7,17 @@ test_dir: "/home/karella/Projects/hippynn/examples/dpp-hippy/test_folder"
 checkpoint_dir: null  # Defaults to {test_dir}/checkpoints
 
 # Dataset paths
-train_path: ""
-train_4m_path: "/home/karella/Projects/hippynn/train_4M"
-train_neutral_path: ""
+train_path: "/home/karella/Projects/hippynn/train_4M"
 val_path: "/home/karella/Projects/hippynn/val"
-val_neutral_path: ""
 test_path: "/home/karella/Projects/hippynn/test"
 henergy_init_path: null  # Defaults to {test_dir}/omol4M_hierarchical_energy_init.pt
 
 # Training parameters
 dl_num_workers: 12
-debug: false
+debug: true
 devices: 2
-max_epochs: 100
+nodes: 1
+max_epochs: 1
 batch_size: 16
 eval_batch_size: 16
 lr_rate: 0.001

@@ -6,6 +6,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 import wandb
+from matplotlib import pyplot as plt
 
 import hippynn
 from hippynn.experiment.controllers import PatienceController, RaiseBatchSizeOnPlateau
@@ -21,6 +22,10 @@ from Omol25_database import Omol25Database
 # TODO: List 
 # - Add test evaluation after training
 # - Fix indexers to work without knowing n_max_atoms in advance
+# - When run after calculating hierarchical energy init it fails
+# - Add computation output 
+# - Support multiple nodes training
+# - Fix the stride warning in gradients (permute, contiguous on grads?) 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="HipHopNN Training Script")
@@ -36,12 +41,8 @@ def parse_args():
                         help="Directory for checkpoints (default: {test_dir}/checkpoints)")
     
     # Dataset paths
-    parser.add_argument("--train-path", type=str, default="",
+    parser.add_argument("--train-path", type=str, default="/home/karella/Projects/hippynn/train_4M",
                         help="Path to training dataset")
-    parser.add_argument("--train-4m-path", type=str, default="/home/karella/Projects/hippynn/train_4M",
-                        help="Path to 4M training dataset")
-    parser.add_argument("--train-neutral-path", type=str, default="",
-                        help="Path to neutral training dataset")
     parser.add_argument("--val-path", type=str, default="/home/karella/Projects/hippynn/val",
                         help="Path to validation dataset")
     parser.add_argument("--val-neutral-path", type=str, default="",
@@ -52,15 +53,19 @@ def parse_args():
                         help="Path to hierarchical energy init file (default: {test_dir}/hierarchical_energy_init.pt)")
     
     # Training parameters
-    parser.add_argument("--dl-num-workers", type=int, default=12,
+    parser.add_argument("--dl-num-workers", type=int, default=16,
                         help="Number of dataloader workers")
-    parser.add_argument("--debug", action="store_true", default=True,
+    parser.add_argument("--compile", action="store_true", default=False,
+                        help="Use torch.compile() for model optimization")
+    parser.add_argument("--debug", action="store_true", default=False,
                         help="Enable debug mode with limited batches")
     parser.add_argument("--devices", type=int, default=1,
                         help="Number of GPU devices")
-    parser.add_argument("--max-epochs", type=int, default=100,
+    parser.add_argument("--nodes", type=int, default=1,
+                        help="Number of compute nodes")
+    parser.add_argument("--max-epochs", type=int, default=2,
                         help="Maximum number of training epochs")
-    parser.add_argument("--batch-size", type=int, default=16,
+    parser.add_argument("--batch-size", type=int, default=412,
                         help="Training batch size")
     parser.add_argument("--eval-batch-size", type=int, default=16,
                         help="Evaluation batch size")
@@ -126,7 +131,9 @@ def parse_args():
     if args.checkpoint_dir is None:
         args.checkpoint_dir = f"{args.test_dir}/checkpoints"
     if args.henergy_init_path is None:
-        args.henergy_init_path = f"{args.test_dir}/omol4M_hierarchical_energy_init.pt"
+        # Derive suffix from training folder name
+        train_folder_name = os.path.basename(args.train_path.rstrip('/'))
+        args.henergy_init_path = f"{args.test_dir}/{train_folder_name}_hierarchical_energy_init.pt"
     
     return args
 
@@ -180,10 +187,6 @@ class PlotCallback(pl.Callback):
         if trainer.global_rank != 0:
             return
         
-        # Generate and log plots
-        import matplotlib
-        matplotlib.use('Agg')  # Non-interactive backend
-        from matplotlib import pyplot as plt
         
         for plotter in self.plot_maker.plotters:
             try:
@@ -248,13 +251,13 @@ if __name__ == "__main__":
     model, loss_module, model_evaluator = training_modules
 
     # 2. Setup Lightning training environment
+    # Log the output of python to `training_log.txt`
     with active_directory(args.test_dir):
-        # Log the output of python to `training_log.txt`
         with log_terminal("training_log.txt", "wt"):
             database = Omol25Database(
                 db_inputs=db_info['inputs'],
                 db_targets=db_info['targets'],
-                training_asedb_path=args.train_4m_path,
+                training_asedb_path=args.train_path,
                 validation_asedb_path=args.val_path,
                 test_asedb_path=args.test_path,
                 n_atoms_max=args.n_atom_max,
@@ -264,6 +267,7 @@ if __name__ == "__main__":
             if not os.path.exists(args.henergy_init_path):
                 print("Initializing hierarchical energy...")
                 hierarchical_energy_initialization(henergy, database, energy_name="energy", decay_factor=1e-2)
+                #TODO: Check the training dataset path and count MD5 hash to check the training data consistency 
                 torch.save(henergy.torch_module.state_dict(), args.henergy_init_path)
                 print(f"Hierarchical energy initialization saved to {args.henergy_init_path}")
             else:
@@ -318,7 +322,6 @@ if __name__ == "__main__":
                 mode="min",
                 save_top_k=3,
                 save_last=True,  # Always save last checkpoint for restart
-                verbose=True,
             )
 
             # Create checkpoint directory if it doesn't exist
@@ -373,19 +376,30 @@ if __name__ == "__main__":
                                                                                 database, 
                                                                                 experiment_params)
             
+            # Compile model if requested (PyTorch 2.0+)
+            if args.compile:
+                print(f"Compiling model with mode='{args.compile_mode}'...")
+                import time
+                compile_start = time.time()
+                lightmod = torch.compile(lightmod, mode=args.compile_mode)
+                print(f"Model compilation setup completed in {time.time() - compile_start:.2f}s")
+            
             trainer = pl.Trainer(accelerator='gpu',
                                 max_epochs=args.max_epochs,
                                 devices=args.devices,
-                                strategy="ddp",
+                                strategy="ddp" if args.devices > 1 else "auto",
+                                num_nodes=args.nodes,
                                 logger=wandb_logger,
                                 callbacks=[checkpoint_callback, plot_callback],
-                                use_distributed_sampler=True,
+                                use_distributed_sampler=True if args.devices > 1 else False,
                                 **trainer_params,
                                 )
+
             wandb_logger.watch(lightmod, log="all", log_freq=10)
             wandb_run = wandb_logger.experiment
             if wandb_run is not None:
                 wandb_run.define_metric("train_loss", summary="min")
+            
             try: 
                 _wandb_status = "failure"
                 trainer.fit(model=lightmod, 
@@ -394,4 +408,3 @@ if __name__ == "__main__":
                 _wandb_status = "success"
             finally:
                 wandb_logger.finalize(status=_wandb_status)
-    # TODO: Add test evaluation after training, but for benchmark. Omol25 test set does not have energies.
