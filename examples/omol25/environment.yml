@@ -1,6 +1,6 @@
 name: hippy-omol
 dependencies:
-  - python=3.14.*
+  - python=3.12.*
   - pip
   - pip:
     - torch==2.8.*
@@ -10,3 +10,4 @@ dependencies:
     - numpy==2.3.*
     - fairchem-core==2.13.*
     - ase==3.26.*
+    - git+https://github.com/karellat/hippynn.git@tkarella-o25
