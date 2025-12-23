@@ -296,7 +296,9 @@ class HippynnLightningModule(pl.LightningModule):
         with torch.autograd.set_grad_enabled(True):
             batch_predictions = self.model(*batch_inputs)
 
-        batch_predictions = [bp.detach() for bp in batch_predictions]
+        # Detach and move to CPU to avoid GPU memory accumulation across batches
+        batch_predictions = [bp.detach().cpu() for bp in batch_predictions]
+        batch_targets = [bt.detach().cpu() for bt in batch_targets]
 
         outputs = (batch_predictions, batch_targets)
         self.eval_step_outputs.append(outputs)
