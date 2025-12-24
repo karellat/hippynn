@@ -155,7 +155,7 @@ class HippynnLightningModule(pl.LightningModule):
             return NotImplemented("arbitrary callbacks are not yet supported with pytorch lightning.")
 
         if database is not None:
-            database = HippynnDataModule(database, controller.batch_size)
+            database = HippynnDataModule(database, controller.batch_size, eval_batch_size=controller.eval_batch_size)
 
         return trainer, database
 
@@ -455,10 +455,11 @@ class LightingPrintStagesCallback(pl.Callback):
 
 
 class HippynnDataModule(pl.LightningDataModule):
-    def __init__(self, database: Database, batch_size):
+    def __init__(self, database: Database, batch_size, eval_batch_size=None):
         super().__init__()
         self.database = database
         self.batch_size = batch_size
+        self.eval_batch_size = eval_batch_size if eval_batch_size is not None else batch_size
 
     def train_dataloader(self):
         """
@@ -472,11 +473,11 @@ class HippynnDataModule(pl.LightningDataModule):
 
         :return:
         """
-        return self.database.make_generator("valid", "eval", self.batch_size)
+        return self.database.make_generator("valid", "eval", self.eval_batch_size)
 
     def test_dataloader(self):
         """
 
         :return:
         """
-        return self.database.make_generator("test", "eval", self.batch_size)
+        return self.database.make_generator("test", "eval", self.eval_batch_size)

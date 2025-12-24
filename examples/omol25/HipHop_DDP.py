@@ -67,7 +67,7 @@ def parse_args():
                         help="Maximum number of training epochs")
     parser.add_argument("--batch-size", type=int, default=412,
                         help="Training batch size")
-    parser.add_argument("--eval-batch-size", type=int, default=16,
+    parser.add_argument("--eval-batch-size", type=int, default=256,
                         help="Evaluation batch size")
     parser.add_argument("--lr-rate", type=float, default=0.001,
                         help="Learning rate")

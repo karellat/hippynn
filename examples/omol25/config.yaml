@@ -18,8 +18,8 @@ debug: false
 devices: 1
 nodes: 1
 max_epochs: 1
-batch_size: 412
-eval_batch_size: 256
+batch_size: 456
+eval_batch_size: 16
 lr_rate: 0.001
 patience: 25
 termination_patience: 50
