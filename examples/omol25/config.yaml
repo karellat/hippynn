@@ -13,13 +13,13 @@ test_path: "/home/karella/Projects/hippynn/test"
 henergy_init_path: null  # Defaults to {test_dir}/omol4M_hierarchical_energy_init.pt
 
 # Training parameters
-dl_num_workers: 12
-debug: true
-devices: 2
+dl_num_workers: 16
+debug: false
+devices: 1
 nodes: 1
 max_epochs: 1
-batch_size: 16
-eval_batch_size: 16
+batch_size: 412
+eval_batch_size: 256
 lr_rate: 0.001
 patience: 25
 termination_patience: 50

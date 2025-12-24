@@ -20,12 +20,12 @@ from hippynn.plotting import SensitivityPlot, PlotMaker
 from Omol25_database import Omol25Database
 
 # TODO: List 
-# - Add test evaluation after training
+# - Add test evaluation after training https://fair-chem.github.io/molecules/leaderboard.html#s2ef 
 # - Fix indexers to work without knowing n_max_atoms in advance
 # - When run after calculating hierarchical energy init it fails
-# - Add computation output 
 # - Support multiple nodes training
 # - Fix the stride warning in gradients (permute, contiguous on grads?) 
+# - Testdataloader does not have energies 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="HipHopNN Training Script")
@@ -312,7 +312,7 @@ if __name__ == "__main__":
             )
 
             # Setup plot callback for wandb logging
-            plot_callback = PlotCallback(plot_maker, plot_every=10)
+            # plot_callback = PlotCallback(plot_maker, plot_every=10)
 
             # Setup ModelCheckpoint callback for restart functionality
             checkpoint_callback = ModelCheckpoint(
@@ -390,12 +390,12 @@ if __name__ == "__main__":
                                 strategy="ddp" if args.devices > 1 else "auto",
                                 num_nodes=args.nodes,
                                 logger=wandb_logger,
-                                callbacks=[checkpoint_callback, plot_callback],
+                                callbacks=[checkpoint_callback], # Add plot_callback if needed
                                 use_distributed_sampler=True if args.devices > 1 else False,
                                 **trainer_params,
                                 )
 
-            wandb_logger.watch(lightmod, log="all", log_freq=10)
+            wandb_logger.watch(lightmod, log="gradients", log_freq=10000, log_graph=False)
             wandb_run = wandb_logger.experiment
             if wandb_run is not None:
                 wandb_run.define_metric("train_loss", summary="min")
