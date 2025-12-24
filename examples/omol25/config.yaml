@@ -3,7 +3,7 @@
 # CLI arguments override values in this file
 
 # Directories
-test_dir: "/home/karella/Projects/hippynn/examples/dpp-hippy/test_folder"
+test_dir: "/home/karella/Projects/hippynn/examples/omol25/test_folder"
 checkpoint_dir: null  # Defaults to {test_dir}/checkpoints
 
 # Dataset paths
@@ -13,11 +13,11 @@ test_path: "/home/karella/Projects/hippynn/test"
 henergy_init_path: null  # Defaults to {test_dir}/omol4M_hierarchical_energy_init.pt
 
 # Training parameters
-dl_num_workers: 16
+dl_num_workers: 32
 debug: false
 devices: 1
 nodes: 1
-max_epochs: 1
+max_epochs: 100
 batch_size: 456
 eval_batch_size: 16
 lr_rate: 0.001

@@ -26,6 +26,9 @@ from Omol25_database import Omol25Database
 # - Support multiple nodes training
 # - Fix the stride warning in gradients (permute, contiguous on grads?) 
 # - Testdataloader does not have energies 
+# - Validation loss explodes for large datasets, we should change eval_step to accumulate loss rather than accumulate all predictions - quick fixed this with averaging eval loss
+# - Try to replace Lightning with TorchTNT 
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="HipHopNN Training Script")
