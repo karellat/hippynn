@@ -75,8 +75,8 @@ class HippynnLightningModule(pl.LightningModule):
 
         self._last_reload_dlene = None  # storage for whether batch size should be changed.
 
-        # Storage for predictions across batches for eval mode.
-        self.eval_step_outputs = []
+        # Storage for accumulated losses across batches for eval mode.
+        self.eval_loss_accum = None  # Will hold (sum_of_losses, total_count)
         self.controller.optimizer = None
 
         for optimizer in self.optimizer_list:
@@ -296,12 +296,18 @@ class HippynnLightningModule(pl.LightningModule):
         with torch.autograd.set_grad_enabled(True):
             batch_predictions = self.model(*batch_inputs)
 
-        # Detach and move to CPU to avoid GPU memory accumulation across batches
-        batch_predictions = [bp.detach().cpu() for bp in batch_predictions]
-        batch_targets = [bt.detach().cpu() for bt in batch_targets]
+        # Compute losses for this batch immediately to avoid memory accumulation
+        batch_losses = [x.detach().cpu() for x in self.eval_loss(*batch_predictions, *batch_targets)]
+        batch_size = batch_inputs[0].shape[0]
 
-        outputs = (batch_predictions, batch_targets)
-        self.eval_step_outputs.append(outputs)
+        if self.eval_loss_accum is None:
+            self.eval_loss_accum = ([loss.item() * batch_size for loss in batch_losses], batch_size)
+        else:
+            current_sums, current_count = self.eval_loss_accum
+            new_sums = [s + loss.item() * batch_size for s, loss in zip(current_sums, batch_losses)]
+            self.eval_loss_accum = (new_sums, current_count + batch_size)
+
+        batch_predictions = [bp.detach().cpu() for bp in batch_predictions]
         return batch_predictions
 
     def validation_step(self, batch, batch_idx):
@@ -324,18 +330,10 @@ class HippynnLightningModule(pl.LightningModule):
 
     def _eval_epoch_end(self, prefix):
 
-        all_batch_predictions, all_batch_targets = zip(*self.eval_step_outputs)
-        # now 'shape' (n_batch, n_outputs) -> need to transpose.
-        all_batch_predictions = [[bpred[i] for bpred in all_batch_predictions] for i in range(self.n_outputs)]
-        # now 'shape' (n_batch, n_targets) -> need to transpose.
-        all_batch_targets = [[bpred[i] for bpred in all_batch_targets] for i in range(self.n_targets)]
-
-        # now cat each prediction and target across the batch index.
-        all_predictions = [torch.cat(x, dim=0) if x[0].shape != () else x[0] for x in all_batch_predictions]
-        all_targets = [torch.cat(x, dim=0) for x in all_batch_targets]
-
-        all_losses = [x.item() for x in self.eval_loss(*all_predictions, *all_targets)]
-        self.eval_step_outputs.clear()  # free memory
+        # Compute final averaged losses from accumulated values
+        loss_sums, total_count = self.eval_loss_accum
+        all_losses = [s / total_count for s in loss_sums]
+        self.eval_loss_accum = None
 
         loss_dict = {name: value for name, value in zip(self.eval_names, all_losses)}
 
