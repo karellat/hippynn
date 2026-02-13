@@ -27,7 +27,10 @@ from Omol25_database import Omol25Database
 # - Fix the stride warning in gradients (permute, contiguous on grads?) 
 # - Testdataloader does not have energies 
 # - Validation loss explodes for large datasets, we should change eval_step to accumulate loss rather than accumulate all predictions - quick fixed this with averaging eval loss
+    # * TODO:  FIX THIS: 
 # - Try to replace Lightning with TorchTNT 
+# - Ask Nick about 
+# - Move the init energies on the dataset
 
 
 def parse_args():
@@ -224,8 +227,6 @@ if __name__ == "__main__":
     # 1. Setup the model graph
     species = inputs.SpeciesNode(db_name="atomic_numbers")
     positions = inputs.PositionsNode(db_name="pos")
-    # TODO: Ask Michael about cell input
-    # cell = inputs.CellNode(db_name="cell")
 
     network = networks.HipHopnn("HipHopnn", 
                                 (species, positions),
@@ -235,9 +236,6 @@ if __name__ == "__main__":
     henergy = targets.HEnergyNode("HEnergy", network)
     sys_energy = henergy.mol_energy
     sys_energy.db_name = "energy"
-    # TODO: Ask Michael about cell input
-    #hierarchicality = henergy.hierarchicality
-    #hierarchicality = physics.PerAtom("RperAtom", hierarchicality)
     force = physics.GradientNode("forces", (sys_energy, positions), sign=-1)
     force.db_name = "forces"
 

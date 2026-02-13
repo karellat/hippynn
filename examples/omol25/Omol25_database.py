@@ -1,5 +1,5 @@
 import os
-# TODO: Remove
+import yaml
 import torch
 from torch.nn.functional import pad
 from tqdm import tqdm
@@ -44,12 +44,31 @@ class Omol25Database(_Database):
             out_batch[self._energy].append(mol.energy)
             out_batch[self._forces].append(pad(mol.forces, (0, 0, 0, padding_length), value=0.0))
         
-        out_batch[self._atomic_numbers] = torch.stack(out_batch[self._atomic_numbers]).to(torch.int32)
-        out_batch[self._pos] = torch.stack(out_batch[self._pos]).to(torch.get_default_dtype())
-        out_batch[self._energy] = torch.stack(out_batch[self._energy]).to(torch.get_default_dtype())
-        out_batch[self._forces] = torch.stack(out_batch[self._forces]).to(torch.get_default_dtype())
+        # Stack tensors (before retyping)
+        out_batch[self._atomic_numbers] = torch.stack(out_batch[self._atomic_numbers])
+        out_batch[self._pos] = torch.stack(out_batch[self._pos])
+        out_batch[self._energy] = torch.stack(out_batch[self._energy])
+        out_batch[self._forces] = torch.stack(out_batch[self._forces])
+        
+        # Apply normalization (if available)
+        if hasattr(self, 'normalization_params') and self.normalization_params is not None:
+            out_batch[self._energy] = self._apply_energy_normalization(out_batch[self._atomic_numbers], out_batch[self._energy])
+        
+        # Retype after normalization
+        out_batch[self._atomic_numbers] = out_batch[self._atomic_numbers].to(torch.long)
+        out_batch[self._pos] = out_batch[self._pos].to(torch.get_default_dtype())
+        out_batch[self._energy] = out_batch[self._energy].to(torch.get_default_dtype())
+        out_batch[self._forces] = out_batch[self._forces].to(torch.get_default_dtype())
         
         return [out_batch[var_name] for var_name in self.var_list]
+    
+    def _apply_energy_normalization(self, species: torch.Tensor, energy: torch.Tensor) -> torch.Tensor:
+        """Apply E0 normalization to energies using reference values."""
+        atom_counts = torch.nn.functional.one_hot(species, num_classes=len(self.normalization_params)).sum(dim=1).double()
+        # TODO: Check the zeros, there is a tiny weight
+        energy_e0 = self.normalization_params @ atom_counts.T
+        normalized_energy = energy[:, 0] - energy_e0
+        return normalized_energy.unsqueeze(1)
 
     @property
     def is_in_memory(self) -> bool:
@@ -88,7 +107,8 @@ class Omol25Database(_Database):
                  validation_asedb_path: str,
                  test_asedb_path: str,
                  n_atoms_max: Optional[int] = None,
-                 dataloader_kwargs: dict = {}):
+                 dataloader_kwargs: dict = {},
+                 normalization_yaml_path: Optional[str] = None):
 
         # Set default inputs and targets 
         self._atomic_numbers = "atomic_numbers"
@@ -102,10 +122,13 @@ class Omol25Database(_Database):
         self.AseDBDatasets = dict()
         self.inputs = db_inputs
         self.targets = db_targets
+        
+        # Load normalization parameters if provided
+        self.normalization_params = None
+        if normalization_yaml_path is not None:
+            self._load_normalization_params(normalization_yaml_path)
 
         # order the inpus and targets
-
-        
         _labels = dict(train=training_asedb_path,
                        valid=validation_asedb_path, 
                        test=test_asedb_path)
@@ -144,6 +167,20 @@ class Omol25Database(_Database):
                         batch = batch.to(torch.device('cuda'))
                         self.n_atoms_max = max(self.n_atoms_max, torch.max(batch.natoms))
         print(f"Determined n_atoms_max: {self.n_atoms_max}")
+    
+    def _load_normalization_params(self, yaml_path: str) -> None:
+        """Load normalization reference values from YAML file."""
+        if not os.path.exists(yaml_path):
+            raise ValueError(f"Normalization YAML file does not exist: {yaml_path}")
+        
+        with open(yaml_path, "r") as f:
+            yaml_data = yaml.safe_load(f)
+        
+        assert 'omol_elem_refs' in yaml_data, f"YAML file must contain 'omol_elem_refs' key. Found keys: {list(yaml_data.keys())}"
+        omol_ref = yaml_data['omol_elem_refs']
+        # Safe tensor creation with proper device handling
+        self.normalization_params = torch.as_tensor(omol_ref, dtype=torch.float64)
+        print(f"Loaded normalization parameters from {yaml_path}")
     
     def _get_loader(self, split_name: str, batch_size: int, shuffle: bool, collate_fn=None, **dataloader_kwargs) -> DataLoader:
         dataset = self.AseDBDatasets[split_name]
