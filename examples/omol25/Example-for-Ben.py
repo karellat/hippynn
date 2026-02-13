@@ -20,6 +20,7 @@ validation_asedb_path = "/home/karella/Projects/hippynn/val"
 test_asedb_path = "/home/karella/Projects/hippynn/test"
 n_atoms_max = 350
 dataloader_kwargs = {'num_workers': 1}
+# NOTE: This can be downloaded: https://raw.githubusercontent.com/facebookresearch/fairchem/refs/heads/main/configs/uma/training_release/element_refs/uma_v1_hof_lin_refs.yaml
 normalization_yaml_path = "/home/karella/Projects/hippynn/examples/omol25/uma_v1_hof_lin_refs.yaml"
 
 import torch 
@@ -67,6 +68,7 @@ database = Omol25Database(
     test_asedb_path=test_asedb_path,
     n_atoms_max=n_atoms_max,
     dataloader_kwargs=dataloader_kwargs,
+    # Comment this line to disable energy normalization
     normalization_yaml_path=normalization_yaml_path
 )
 
