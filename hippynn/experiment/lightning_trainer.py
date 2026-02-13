@@ -292,6 +292,8 @@ class HippynnLightningModule(pl.LightningModule):
         batch_inputs = batch[: self.n_inputs]
         batch_targets = batch[-self.n_targets :]
 
+        # TODO: Fix the averaging on different metrics
+
         # It is very, very common to fit to derivatives, e.g. force, in hippynn. Override lightning default.
         with torch.autograd.set_grad_enabled(True):
             batch_predictions = self.model(*batch_inputs)
@@ -308,7 +310,8 @@ class HippynnLightningModule(pl.LightningModule):
             self.eval_loss_accum = (new_sums, current_count + batch_size)
 
         batch_predictions = [bp.detach().cpu() for bp in batch_predictions]
-        return batch_predictions
+        # TODO: It seems that if you return something from the validation step, lightning will accumulate.
+        return None
 
     def validation_step(self, batch, batch_idx):
         """

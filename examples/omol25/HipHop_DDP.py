@@ -57,6 +57,8 @@ def parse_args():
                         help="Path to test dataset")
     parser.add_argument("--henergy-init-path", type=str, default=None,
                         help="Path to hierarchical energy init file (default: {test_dir}/hierarchical_energy_init.pt)")
+    parser.add_argument("--normalization-yaml-path", type=str, default="/home/karella/Projects/hippynn/examples/omol25/uma_v1_hof_lin_refs.yaml",
+                        help="Path to YAML file with normalization reference values")
     
     # Training parameters
     parser.add_argument("--dl-num-workers", type=int, default=16,
@@ -263,6 +265,7 @@ if __name__ == "__main__":
                 test_asedb_path=args.test_path,
                 n_atoms_max=args.n_atom_max,
                 dataloader_kwargs={'num_workers': args.dl_num_workers},
+                normalization_yaml_path=args.normalization_yaml_path
             )
 
             if not os.path.exists(args.henergy_init_path):
