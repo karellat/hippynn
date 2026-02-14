@@ -285,6 +285,10 @@ class HippynnLightningModule(pl.LightningModule):
         batch_train_loss = self.loss(*batch_model_outputs, *batch_targets)[0]
 
         self.log("train_loss", batch_train_loss)
+        
+        # Clear intermediate outputs to reduce memory fragmentation
+        del batch_model_outputs, batch_inputs, batch_targets
+        
         return batch_train_loss
 
     def _eval_step(self, batch, batch_idx):
@@ -301,6 +305,9 @@ class HippynnLightningModule(pl.LightningModule):
         # Compute losses for this batch immediately to avoid memory accumulation
         batch_losses = [x.detach().cpu() for x in self.eval_loss(*batch_predictions, *batch_targets)]
         batch_size = batch_inputs[0].shape[0]
+        
+        # Free memory immediately after computing losses
+        del batch_inputs, batch_targets
 
         if self.eval_loss_accum is None:
             self.eval_loss_accum = ([loss.item() * batch_size for loss in batch_losses], batch_size)
@@ -309,8 +316,10 @@ class HippynnLightningModule(pl.LightningModule):
             new_sums = [s + loss.item() * batch_size for s, loss in zip(current_sums, batch_losses)]
             self.eval_loss_accum = (new_sums, current_count + batch_size)
 
-        batch_predictions = [bp.detach().cpu() for bp in batch_predictions]
-        # TODO: It seems that if you return something from the validation step, lightning will accumulate.
+        # Don't return predictions - Lightning would cache them causing OOM
+        # We only need the accumulated losses which are stored in self.eval_loss_accum
+        # Free the predictions memory immediately
+        del batch_predictions, batch_losses
         return None
 
     def validation_step(self, batch, batch_idx):
@@ -342,6 +351,8 @@ class HippynnLightningModule(pl.LightningModule):
 
         self.log_dict({prefix + k: v for k, v in loss_dict.items()}, sync_dist=True)
 
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         return
 
     def on_validation_epoch_end(self):

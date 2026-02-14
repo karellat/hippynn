@@ -61,7 +61,7 @@ def parse_args():
                         help="Path to YAML file with normalization reference values")
     
     # Training parameters
-    parser.add_argument("--dl-num-workers", type=int, default=16,
+    parser.add_argument("--dl-num-workers", type=int, default=32,
                         help="Number of dataloader workers")
     parser.add_argument("--compile", action="store_true", default=False,
                         help="Use torch.compile() for model optimization")
@@ -71,12 +71,14 @@ def parse_args():
                         help="Number of GPU devices")
     parser.add_argument("--nodes", type=int, default=1,
                         help="Number of compute nodes")
-    parser.add_argument("--max-epochs", type=int, default=2,
+    parser.add_argument("--max-epochs", type=int, default=20,
                         help="Maximum number of training epochs")
-    parser.add_argument("--batch-size", type=int, default=412,
+    parser.add_argument("--batch-size", type=int, default=256,
                         help="Training batch size")
     parser.add_argument("--eval-batch-size", type=int, default=256,
                         help="Evaluation batch size")
+    parser.add_argument("--accumulate-grad-batches", type=int, default=1,
+                        help="Number of batches to accumulate gradients (for effective larger batch size)")
     parser.add_argument("--lr-rate", type=float, default=0.001,
                         help="Learning rate")
     parser.add_argument("--patience", type=int, default=25,
@@ -166,14 +168,19 @@ def get_network_params(args):
 
 def get_trainer_params(args):
     """Build trainer parameters based on debug mode."""
+    params = {
+        'accumulate_grad_batches': args.accumulate_grad_batches,
+    }
+    
     if args.debug:
-        return {
+        params.update({
             'limit_train_batches': 100,
             'limit_val_batches': 100,
             'detect_anomaly': True,
             'deterministic': True
-        }
-    return {}
+        })
+    
+    return params
 
 
 class PlotCallback(pl.Callback):
@@ -216,6 +223,11 @@ if __name__ == "__main__":
     # Parse arguments
     args = parse_args()
 
+    # Set CUDA memory allocator configuration to combat fragmentation
+    import os
+    if 'PYTORCH_CUDA_ALLOC_CONF' not in os.environ:
+        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True,max_split_size_mb:128'
+    
     # Debug settings
     torch.set_default_dtype(torch.float32)
     torch.set_float32_matmul_precision('high')
