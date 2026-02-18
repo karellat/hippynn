@@ -41,7 +41,7 @@ def parse_args():
                         help="Path to YAML config file. CLI args override config file values.")
     
     # Directories
-    parser.add_argument("--test-dir", type=str, default="/home/karella/Projects/hippynn/examples/dpp-hippy/test_folder",
+    parser.add_argument("--test-dir", type=str, default="/home/karella/Projects/hippynn/examples/dpp-hippy/profilling-advanced",
                         help="Directory for test outputs and logs")
     parser.add_argument("--checkpoint-dir", type=str, default=None,
                         help="Directory for checkpoints (default: {test_dir}/checkpoints)")
@@ -61,7 +61,7 @@ def parse_args():
                         help="Path to YAML file with normalization reference values")
     
     # Training parameters
-    parser.add_argument("--dl-num-workers", type=int, default=32,
+    parser.add_argument("--dl-num-workers", type=int, default=8,
                         help="Number of dataloader workers")
     parser.add_argument("--compile", action="store_true", default=False,
                         help="Use torch.compile() for model optimization")
@@ -71,7 +71,7 @@ def parse_args():
                         help="Number of GPU devices")
     parser.add_argument("--nodes", type=int, default=1,
                         help="Number of compute nodes")
-    parser.add_argument("--max-epochs", type=int, default=20,
+    parser.add_argument("--max-epochs", type=int, default=1,
                         help="Maximum number of training epochs")
     parser.add_argument("--batch-size", type=int, default=256,
                         help="Training batch size")
@@ -117,7 +117,7 @@ def parse_args():
     # WandB parameters
     parser.add_argument("--wandb-project", type=str, default="hippynn",
                         help="WandB project name")
-    parser.add_argument("--wandb-name", type=str, default="HipHopNN-DDP",
+    parser.add_argument("--wandb-name", type=str, default="HipHopNN-profiling-advanced",
                         help="WandB run name")
     parser.add_argument("--wandb-entity", type=str, default="karella",
                         help="WandB entity")
@@ -406,6 +406,7 @@ if __name__ == "__main__":
                                 strategy="ddp" if args.devices > 1 else "auto",
                                 num_nodes=args.nodes,
                                 logger=wandb_logger,
+                                profiler="advanced",
                                 callbacks=[checkpoint_callback], # Add plot_callback if needed
                                 use_distributed_sampler=True if args.devices > 1 else False,
                                 **trainer_params,
