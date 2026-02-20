@@ -88,7 +88,7 @@ class Database(_Database):
         arr_dict: dict[str, torch.Tensor],
         inputs: list[str],
         targets: list[str],
-        seed: [int, torch.Generator],
+        seed: list[int, torch.Generator],
         test_size: Union[float, int] = None,
         valid_size: Union[float, int] = None,
         num_workers: int = 0,
@@ -108,8 +108,10 @@ class Database(_Database):
         :param valid_size: fraction of data to use in train split
         :param num_workers: passed to pytorch dataloaders
         :param pin_memory: passed to pytorch dataloaders
-        :param allow_unfound: If true, skip checking if the needed inputs and targets are found.
-           This allows setting inputs=None and/or targets=None.
+        :param allow_unfound: If true, skip validating the needed inputs and targets are found.
+            This allows setting inputs=None and/or targets=None.
+            If True, the code will attempt to load all arrays.
+            If False, the code should only open the needed arrays. 
         :param auto_split: If true, look for keys like "split_*" to make initial splits from. See write_npz() method.
         :param device: if set, move the dataset to this device after splitting.
         :param dataloader_kwargs: dictionary, passed to pytorch dataloaders in addition to num_workers, pin_memory.
@@ -668,7 +670,7 @@ class Database(_Database):
         self,
         file: str,
         record_split_masks: bool = True,
-        compressed: bool = True,
+        compress: bool = True,
         overwrite: bool = False,
         split_prefix: Union[str, None] = None,
         return_only: bool = False,
@@ -719,7 +721,7 @@ class Database(_Database):
             if file.exists() and not overwrite:
                 raise FileExistsError(f"File exists: {file}")
 
-        if compressed:
+        if compress:
             np.savez_compressed(file, **arr_dict)
         else:
             np.savez(file, **arr_dict)
@@ -822,7 +824,7 @@ class Database(_Database):
         device = devices.pop()
         return device
 
-    def make_database_cache(self, file: str = "./hippynn_db_cache.npz", overwrite: bool = False, **override_kwargs) -> "Database":
+    def make_database_cache(self, file: str = "./hippynn_db_cache.npz", overwrite: bool = False, compress=True, **override_kwargs) -> "Database":
         """
         Cache the database as-is, and re-open it.
 
@@ -865,7 +867,7 @@ class Database(_Database):
             print("Writing Cached database to", file)
 
         self.write_npz(
-            file=file, record_split_masks=True, overwrite=overwrite, return_only=False  # allows inheriting of splits from this db.
+            file=file, record_split_masks=True, overwrite=overwrite, compress=compress, return_only=False  # allows inheriting of splits from this db.
         )
         # now reload cached file.
         return NPZDatabase(**arguments)
@@ -878,9 +880,8 @@ def compute_index_mask(indices: torch.Tensor, index_pool: torch.Tensor) -> torch
     :param index_pool:
     :return:
     """
-    index_set = set(index_pool.tolist())
-    if not all(i.item() in index_set for i in indices):
-        raise ValueError("Provided indices not in database")
+    if not torch.isin(indices, index_pool).all().item():
+        raise ValueError("Some provided indices not in database.")
 
     uniques, counts = torch.unique(indices, return_counts=True)
     if uniques.numel() != indices.numel():
@@ -911,7 +912,7 @@ def prettyprint_arrays(arr_dict: dict[str: torch.Tensor]):
     printline()
     for key, value in arr_dict.items():
         if isinstance(value, torch.Tensor):
-            value = value.numpy()
+            value = value.detach().cpu().numpy()
         printrow(key, repr(value.dtype), repr(value.shape))
     printline()
 

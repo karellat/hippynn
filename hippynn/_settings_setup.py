@@ -12,7 +12,6 @@ import os
 import configparser
 from typing import Union
 
-from distutils.util import strtobool
 from types import SimpleNamespace
 from functools import partial
 
@@ -107,8 +106,32 @@ def kernel_handler(kernel_string):
 def bool_or_strtobool(key: Union[bool, str]):
     if isinstance(key, bool):
         return key
+    elif isinstance(key,str):
+        # Boolean states 
+        return {
+            '1': True,    
+            'yes': True,
+            'true': True,
+            'on': True,
+            '0': False,
+            'no': False,
+            'false': False,
+            'off': False,
+            }[key.casefold()]
     else:
-        return strtobool(key)
+        raise ValueError(f"Invalid value {key} of type {type(key)}. Truth-ish string or boolean is required.")
+
+def deprecation_handler(deprecation_string):
+    deprecation_string = deprecation_string.casefold()
+    deprecation_vals = ["simple", "ignore", "all"]
+    
+    if deprecation_string not in deprecation_vals:
+        default = DEFAULT_SETTINGS['DEPRECATION_WARNINGS'][0]
+        warnings.warn(f"Invalid DEPRECATION_WARNINGS setting: {deprecation_string}. Using default: {default}")
+        deprecation_string = default
+
+    return deprecation_string
+        
 
 
 # keys: defaults, types, and handlers.
