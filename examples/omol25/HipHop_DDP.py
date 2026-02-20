@@ -1,11 +1,13 @@
 import os
-import argparse
 import yaml
 import torch
+# TODO: This would be nice to be able to turn on and off with a debug flag.
+import wandb
+import argparse
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
-import wandb
+from pytorch_lightning.profilers import AdvancedProfiler
 from matplotlib import pyplot as plt
 
 import hippynn
@@ -14,7 +16,7 @@ from hippynn.graphs import inputs, networks, targets, physics
 from hippynn.graphs.nodes.loss import MAELoss
 from hippynn.experiment.assembly import assemble_for_training
 from hippynn.tools import active_directory, log_terminal
-from hippynn.experiment import HippynnLightningModule
+from hippynn.experiment import HippynnLightningModule, setup_and_profile
 from hippynn.pretraining import hierarchical_energy_initialization
 from hippynn.plotting import SensitivityPlot, PlotMaker
 from Omol25_database import Omol25Database
@@ -41,7 +43,7 @@ def parse_args():
                         help="Path to YAML config file. CLI args override config file values.")
     
     # Directories
-    parser.add_argument("--test-dir", type=str, default="/home/karella/Projects/hippynn/examples/dpp-hippy/profilling-advanced",
+    parser.add_argument("--test-dir", type=str, default="/home/karella/Projects/hippynn/examples/dpp-hippy/omol4m-20-epoch-64-batch-fix",
                         help="Directory for test outputs and logs")
     parser.add_argument("--checkpoint-dir", type=str, default=None,
                         help="Directory for checkpoints (default: {test_dir}/checkpoints)")
@@ -61,21 +63,21 @@ def parse_args():
                         help="Path to YAML file with normalization reference values")
     
     # Training parameters
-    parser.add_argument("--dl-num-workers", type=int, default=8,
+    parser.add_argument("--dl-num-workers", type=int, default=10,
                         help="Number of dataloader workers")
-    parser.add_argument("--compile", action="store_true", default=False,
-                        help="Use torch.compile() for model optimization")
     parser.add_argument("--debug", action="store_true", default=False,
                         help="Enable debug mode with limited batches")
     parser.add_argument("--devices", type=int, default=1,
                         help="Number of GPU devices")
+    parser.add_argument("--profiler", action="store_true", default=False,
+                        help="Enable PyTorch Lightning profiler")
     parser.add_argument("--nodes", type=int, default=1,
                         help="Number of compute nodes")
     parser.add_argument("--max-epochs", type=int, default=1,
                         help="Maximum number of training epochs")
-    parser.add_argument("--batch-size", type=int, default=256,
+    parser.add_argument("--batch-size", type=int, default=64,
                         help="Training batch size")
-    parser.add_argument("--eval-batch-size", type=int, default=256,
+    parser.add_argument("--eval-batch-size", type=int, default=64,
                         help="Evaluation batch size")
     parser.add_argument("--accumulate-grad-batches", type=int, default=1,
                         help="Number of batches to accumulate gradients (for effective larger batch size)")
@@ -117,7 +119,7 @@ def parse_args():
     # WandB parameters
     parser.add_argument("--wandb-project", type=str, default="hippynn",
                         help="WandB project name")
-    parser.add_argument("--wandb-name", type=str, default="HipHopNN-profiling-advanced",
+    parser.add_argument("--wandb-name", type=str, default="HipHopNN-omol4m-20-epoch-64-batch-fix",
                         help="WandB run name")
     parser.add_argument("--wandb-entity", type=str, default="karella",
                         help="WandB entity")
@@ -220,9 +222,10 @@ class PlotCallback(pl.Callback):
 
 
 if __name__ == "__main__":
+    
+    # TODO: Move wandb import here. 
     # Parse arguments
     args = parse_args()
-
     # Set CUDA memory allocator configuration to combat fragmentation
     import os
     if 'PYTORCH_CUDA_ALLOC_CONF' not in os.environ:
@@ -236,7 +239,10 @@ if __name__ == "__main__":
     # Build parameters from args
     network_params = get_network_params(args)
     trainer_params = get_trainer_params(args)
-
+    trainer_params.update({
+            'limit_train_batches': 1000,
+            'limit_val_batches': 1000,
+        })
 
     # 1. Setup the model graph
     species = inputs.SpeciesNode(db_name="atomic_numbers")
@@ -248,15 +254,18 @@ if __name__ == "__main__":
                                 periodic=False)
 
     henergy = targets.HEnergyNode("HEnergy", network)
-    sys_energy = henergy.mol_energy
+    sys_energy = henergy.mol_energy # TODO: What mol energy means in this? 
     sys_energy.db_name = "energy"
-    force = physics.GradientNode("forces", (sys_energy, positions), sign=-1)
+    force = physics.GradientNode("forces",
+                                 (sys_energy, positions),
+                                  sign=-1)
     force.db_name = "forces"
 
     validation_losses = {
     "T-MAE":MAELoss.of_node(sys_energy),
     "F-MAE":MAELoss.of_node(force),
     }
+    # TODO: We should introduce some weights here
     validation_losses['loss'] =  validation_losses['T-MAE'] + validation_losses['F-MAE']
 
     train_loss = validation_losses['loss']
@@ -276,7 +285,11 @@ if __name__ == "__main__":
                 validation_asedb_path=args.val_path,
                 test_asedb_path=args.test_path,
                 n_atoms_max=args.n_atom_max,
-                dataloader_kwargs={'num_workers': args.dl_num_workers},
+                dataloader_kwargs={
+                    'num_workers': args.dl_num_workers,
+                    'pin_memory': True,
+                    'persistent_workers': True,
+                    'prefetch_factor': 4},
                 normalization_yaml_path=args.normalization_yaml_path
             )
 
@@ -387,18 +400,22 @@ if __name__ == "__main__":
                 controller=controller
             )
 
+            
+            # NOTE: For testing purposes, you can skip the lightning training
+            setup_and_profile(
+                training_modules=training_modules,
+                database=database,
+                setup_params=experiment_params)
+            exit(0) 
+
             # lightning needs to run exactly where the script is located in distributed modes.
             lightmod, datamodule = HippynnLightningModule.from_experiment_setup(training_modules, 
                                                                                 database, 
                                                                                 experiment_params)
-            
-            # Compile model if requested (PyTorch 2.0+)
-            if args.compile:
-                print(f"Compiling model with mode='{args.compile_mode}'...")
-                import time
-                compile_start = time.time()
-                lightmod = torch.compile(lightmod, mode=args.compile_mode)
-                print(f"Model compilation setup completed in {time.time() - compile_start:.2f}s")
+            if args.profiler:
+                trainer_params['profiler'] = AdvancedProfiler(dirpath=args.test_dir,
+                                                              filename="profiler_report.prof",
+                                                              dump_stats=True)
             
             trainer = pl.Trainer(accelerator='gpu',
                                 max_epochs=args.max_epochs,
@@ -406,17 +423,16 @@ if __name__ == "__main__":
                                 strategy="ddp" if args.devices > 1 else "auto",
                                 num_nodes=args.nodes,
                                 logger=wandb_logger,
-                                profiler="advanced",
                                 callbacks=[checkpoint_callback], # Add plot_callback if needed
                                 use_distributed_sampler=True if args.devices > 1 else False,
                                 **trainer_params,
                                 )
 
-            wandb_logger.watch(lightmod, log="gradients", log_freq=10000, log_graph=False)
+            # TODO: Ski the gradients logging for now, it is very slow and we are not sure if it is working correctly with the current setup. We can add it back later with proper testing.
+            # wandb_logger.watch(lightmod, log="gradients", log_freq=10000, log_graph=False)
             wandb_run = wandb_logger.experiment
             if wandb_run is not None:
                 wandb_run.define_metric("train_loss", summary="min")
-            
             try: 
                 _wandb_status = "failure"
                 trainer.fit(model=lightmod, 

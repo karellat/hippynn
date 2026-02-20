@@ -285,9 +285,11 @@ class HippynnLightningModule(pl.LightningModule):
         batch_train_loss = self.loss(*batch_model_outputs, *batch_targets)[0]
 
         self.log("train_loss", batch_train_loss)
+        # TODO: Add the metrics too
         
         # Clear intermediate outputs to reduce memory fragmentation
-        del batch_model_outputs, batch_inputs, batch_targets
+        # TODO: Leave this to OOM 
+        # del batch_model_outputs, batch_inputs, batch_targets
         
         return batch_train_loss
 
@@ -296,31 +298,26 @@ class HippynnLightningModule(pl.LightningModule):
         batch_inputs = batch[: self.n_inputs]
         batch_targets = batch[-self.n_targets :]
 
-        # TODO: Fix the averaging on different metrics
 
         # It is very, very common to fit to derivatives, e.g. force, in hippynn. Override lightning default.
         with torch.autograd.set_grad_enabled(True):
             batch_predictions = self.model(*batch_inputs)
 
         # Compute losses for this batch immediately to avoid memory accumulation
-        batch_losses = [x.detach().cpu() for x in self.eval_loss(*batch_predictions, *batch_targets)]
+        # TODO: Do we need this item call? Try to remove it.
+        batch_losses = [x.item() for x in self.eval_loss(*batch_predictions, *batch_targets)]
         batch_size = batch_inputs[0].shape[0]
-        
-        # Free memory immediately after computing losses
-        del batch_inputs, batch_targets
 
+        # TODO: Check the metrics calculation
         if self.eval_loss_accum is None:
-            self.eval_loss_accum = ([loss.item() * batch_size for loss in batch_losses], batch_size)
+            self.eval_loss_accum = ([loss * batch_size for loss in batch_losses], batch_size)
         else:
             current_sums, current_count = self.eval_loss_accum
-            new_sums = [s + loss.item() * batch_size for s, loss in zip(current_sums, batch_losses)]
+            new_sums = [s + loss * batch_size for s, loss in zip(current_sums, batch_losses)]
             self.eval_loss_accum = (new_sums, current_count + batch_size)
 
         # Don't return predictions - Lightning would cache them causing OOM
-        # We only need the accumulated losses which are stored in self.eval_loss_accum
-        # Free the predictions memory immediately
-        del batch_predictions, batch_losses
-        return None
+        return
 
     def validation_step(self, batch, batch_idx):
         """
@@ -341,7 +338,6 @@ class HippynnLightningModule(pl.LightningModule):
         return self._eval_step(batch, batch_idx)
 
     def _eval_epoch_end(self, prefix):
-
         # Compute final averaged losses from accumulated values
         loss_sums, total_count = self.eval_loss_accum
         all_losses = [s / total_count for s in loss_sums]
@@ -351,8 +347,6 @@ class HippynnLightningModule(pl.LightningModule):
 
         self.log_dict({prefix + k: v for k, v in loss_dict.items()}, sync_dist=True)
 
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
         return
 
     def on_validation_epoch_end(self):

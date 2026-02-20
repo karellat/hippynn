@@ -3,7 +3,6 @@ import yaml
 import torch
 from torch.nn.functional import pad
 from tqdm import tqdm
-from ase.db import connect
 from typing import Optional
 from torch.utils.data import DataLoader
 from fairchem.core.datasets import AseDBDataset
@@ -177,6 +176,7 @@ class Omol25Database(_Database):
             yaml_data = yaml.safe_load(f)
         
         assert 'omol_elem_refs' in yaml_data, f"YAML file must contain 'omol_elem_refs' key. Found keys: {list(yaml_data.keys())}"
+        # TODO: We should try the OC22 normalization, it seems UMA doesn't bother with spins and charges.
         omol_ref = yaml_data['omol_elem_refs']
         # Safe tensor creation with proper device handling
         self.normalization_params = torch.as_tensor(omol_ref, dtype=torch.float64)
