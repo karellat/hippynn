@@ -63,8 +63,10 @@ class Omol25Database(_Database):
     
     def _apply_energy_normalization(self, species: torch.Tensor, energy: torch.Tensor) -> torch.Tensor:
         """Apply E0 normalization to energies using reference values."""
-        atom_counts = torch.nn.functional.one_hot(species, num_classes=len(self.normalization_params)).sum(dim=1).double()
-        # TODO: Check the zeros, there is a tiny weight
+        # Ignore zeros and check that all species are in the normalization parameters
+        assert torch.isin(torch.unique(species)[1:], self.species).all(), "All species in the batch must be in the normalization parameters"
+        atom_counts = torch.nn.functional.one_hot(species, num_classes=self._species_max+1).sum(dim=1).double()
+        atom_counts = atom_counts[:, self.species]  # Filter to only include specified species
         energy_e0 = self.normalization_params @ atom_counts.T
         normalized_energy = energy[:, 0] - energy_e0
         return normalized_energy.unsqueeze(1)
@@ -102,10 +104,11 @@ class Omol25Database(_Database):
     def __init__(self,
                  db_inputs: list[str],
                  db_targets: list[str],
-                 training_asedb_path: str, 
-                 validation_asedb_path: str,
-                 test_asedb_path: str,
+                 training_asedb_path: str | list[str], 
+                 validation_asedb_path: str | list[str],
+                 test_asedb_path: str | list[str],
                  n_atoms_max: Optional[int] = None,
+                 species: Optional[list[int]] = None,
                  dataloader_kwargs: dict = {},
                  normalization_yaml_path: Optional[str] = None):
 
@@ -121,40 +124,40 @@ class Omol25Database(_Database):
         self.AseDBDatasets = dict()
         self.inputs = db_inputs
         self.targets = db_targets
+        self.species = torch.tensor(species, dtype=torch.int) if species is not None else torch.tensor([range(1, 100)], dtype=torch.int)
+        self._species_max = torch.max(self.species).item()
         
         # Load normalization parameters if provided
         self.normalization_params = None
         if normalization_yaml_path is not None:
-            self._load_normalization_params(normalization_yaml_path)
+            self._load_normalization_params(normalization_yaml_path, species)
 
         # order the inpus and targets
+        training_asedb_path = training_asedb_path if isinstance(training_asedb_path, list) else [training_asedb_path] 
+        validation_asedb_path = validation_asedb_path if isinstance(validation_asedb_path, list) else [validation_asedb_path]
+        test_asedb_path = test_asedb_path if isinstance(test_asedb_path, list) else [test_asedb_path]
         _labels = dict(train=training_asedb_path,
                        valid=validation_asedb_path, 
                        test=test_asedb_path)
-
-        assert os.path.exists(training_asedb_path), f"Training database path does not exist: {training_asedb_path}"
-        assert os.path.exists(validation_asedb_path), f"Validation database path does not exist: {validation_asedb_path}"
-        assert os.path.exists(test_asedb_path), f"Test database path does not exist: {test_asedb_path}"
-        
         # Connect to db and count the maximum natoms
         self.dataloader_kwargs = dataloader_kwargs
         self.n_atoms_max = 0 
-        for split_name, path in _labels.items():
-            if not os.path.exists(path):
-                raise ValueError(f"Path for split {split_name} does not exist: {path}")
-            else: 
-                db = AseDBDataset(
-                    config=dict(
-                        src=path,
-                        a2g_args=dict(
-                            task_name="omol",   
-                            r_energy=True,
-                            r_forces=True,
-                            r_stress=False,
-                        ),
-                    )
+        for split_name, paths in _labels.items():
+            for path in paths: 
+                if not os.path.exists(path):
+                    raise ValueError(f"Path for split {split_name} does not exist: {path}")
+            db = AseDBDataset(
+                config=dict(
+                    src=paths,
+                    a2g_args=dict(
+                        task_name="omol",   
+                        r_energy=True,
+                        r_forces=True,
+                        r_stress=False,
+                    ),
                 )
-                self.AseDBDatasets[split_name] = db
+            )
+            self.AseDBDatasets[split_name] = db
         if n_atoms_max is not None:
             self.n_atoms_max = n_atoms_max
         else: 
@@ -166,8 +169,10 @@ class Omol25Database(_Database):
                         batch = batch.to(torch.device('cuda'))
                         self.n_atoms_max = max(self.n_atoms_max, torch.max(batch.natoms))
         print(f"Determined n_atoms_max: {self.n_atoms_max}")
+        # We load splits independently. 
+        self.splitting_completed = True
     
-    def _load_normalization_params(self, yaml_path: str) -> None:
+    def _load_normalization_params(self, yaml_path: str, species: Optional[list[int]] = None) -> None:
         """Load normalization reference values from YAML file."""
         if not os.path.exists(yaml_path):
             raise ValueError(f"Normalization YAML file does not exist: {yaml_path}")
@@ -180,7 +185,13 @@ class Omol25Database(_Database):
         omol_ref = yaml_data['omol_elem_refs']
         # Safe tensor creation with proper device handling
         self.normalization_params = torch.as_tensor(omol_ref, dtype=torch.float64)
-        print(f"Loaded normalization parameters from {yaml_path}")
+        print(f"Loaded omol pre-normalization parameters from {yaml_path}")
+        if species is not None:
+            # Filter normalization parameters to only include specified species
+            for  s in species:
+                assert s < len(self.normalization_params), f"Species index {s} out of bounds for normalization parameters with length {len(self.normalization_params)}"
+            self.normalization_params = self.normalization_params[species]
+            print(f"\tSpecies provided: {species}. Filtered normalization parameters to these species.")
     
     def _get_loader(self, split_name: str, batch_size: int, shuffle: bool, collate_fn=None, **dataloader_kwargs) -> DataLoader:
         dataset = self.AseDBDatasets[split_name]

@@ -21,6 +21,7 @@ _AUTO_SPLIT_PREFIX = "split_mask_"
 class _Database(ABC): 
     def __init__(self):
         super().__init__()
+        self.splitting_completed = False
 
         # Check inputs and targets are defined in subclass
         for attr in ("inputs", "targets"):
@@ -125,7 +126,6 @@ class Database(_Database):
         self.inputs = inputs
         self.targets = targets
         self.quiet = quiet
-        self.splitting_completed = False
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.auto_split = auto_split
