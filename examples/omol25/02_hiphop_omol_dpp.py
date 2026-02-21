@@ -42,18 +42,16 @@ def parse_args():
                         help="Path to YAML config file. CLI args override config file values.")
     
     # Directories
-    parser.add_argument("--test-dir", type=str, default="/home/karella/Projects/hippynn/examples/dpp-hippy/test-4M",
+    parser.add_argument("--test-dir", type=str, default="/home/karella/Projects/hippynn/examples/ben-subset/test",
                         help="Directory for test outputs and logs")
     parser.add_argument("--checkpoint-dir", type=str, default=None,
                         help="Directory for checkpoints (default: {test_dir}/checkpoints)")
     
     # Dataset paths
-    parser.add_argument("--train-path", type=str, default=["/home/karella/Projects/hippynn/dataset/omol_4M_train"],
+    parser.add_argument("--train-path", type=str, default=["/home/karella/Projects/hippynn/dataset/omol_bensneutral_train", "/home/karella/Projects/hippynn/dataset/opoly_bens_train"],
                         help="Path to training dataset")
-    parser.add_argument("--val-path", type=str, default=["/home/karella/Projects/hippynn/dataset/omol_val"],
+    parser.add_argument("--val-path", type=str, default=["/home/karella/Projects/hippynn/dataset/omol_bensneutral_val", "/home/karella/Projects/hippynn/dataset/opoly_bens_val"],
                         help="Path to validation dataset")
-    parser.add_argument("--val-neutral-path", type=str, default="",
-                        help="Path to neutral validation dataset")
     parser.add_argument("--test-path", type=str, default="/home/karella/Projects/hippynn/test",
                         help="Path to test dataset")
     parser.add_argument("--henergy-init-path", type=str, default=None,
@@ -72,11 +70,11 @@ def parse_args():
                         help="Enable PyTorch Lightning profiler")
     parser.add_argument("--nodes", type=int, default=1,
                         help="Number of compute nodes")
-    parser.add_argument("--max-epochs", type=int, default=1,
+    parser.add_argument("--max-epochs", type=int, default=80,
                         help="Maximum number of training epochs")
-    parser.add_argument("--batch-size", type=int, default=64,
+    parser.add_argument("--batch-size", type=int, default=256,
                         help="Training batch size")
-    parser.add_argument("--eval-batch-size", type=int, default=64,
+    parser.add_argument("--eval-batch-size", type=int, default=256,
                         help="Evaluation batch size")
     parser.add_argument("--accumulate-grad-batches", type=int, default=1,
                         help="Number of batches to accumulate gradients (for effective larger batch size)")
@@ -112,9 +110,9 @@ def parse_args():
                         help="Type of sensitivity function")
     parser.add_argument("--no-resnet", action="store_true", default=False,
                         help="Disable ResNet connections")
-    parser.add_argument("--max-species", type=int, default=84,
+    parser.add_argument("--max-species", type=int, default=None,
                         help="Maximum number of species (elements), +1 for the zero padding.")
-    parser.add_argument("--species", type=list, default=None,
+    parser.add_argument("--species", type=list, default=[1, 6, 7, 8, 9, 17],
                         help="List of atomic numbers to include as species")
     
     # WandB parameters
