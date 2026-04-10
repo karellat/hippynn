@@ -9,4 +9,7 @@ dependencies:
     - wandb==0.23.*
     - numpy==2.3.*
     - ase==3.26.*
+    - monty
+    - ase-db-backends>=0.10.0
+    - lmdb>=1.6.2,<=1.7.3
     #- git+https://github.com/karellat/hippynn.git@tkarella-o25

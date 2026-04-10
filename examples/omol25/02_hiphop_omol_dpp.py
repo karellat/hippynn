@@ -116,7 +116,7 @@ def parse_args():
                         help="List of atomic numbers to include as species")
     
     # WandB parameters
-    parser.add_argument("--wandb", action="store_true", default=False,  
+    parser.add_argument("--wandb", action="store_true", default=True,  
                         help="Enable WandB logging")
     parser.add_argument("--wandb-project", type=str, default="hippynn",
                         help="WandB project name")
@@ -286,8 +286,8 @@ if __name__ == "__main__":
                 n_atoms_max=args.n_atom_max,
                 dataloader_kwargs={
                     'num_workers': args.dl_num_workers,
-                    'pin_memory': True,
-                    'persistent_workers': True,
+                    'pin_memory': False,
+                    'persistent_workers': False,
                     'prefetch_factor': 4},
                 normalization_yaml_path=args.normalization_yaml_path
             )
