@@ -148,8 +148,9 @@ DEFAULT_SETTINGS = {
     "TIMEPLOT_AUTOSCALING": (True, bool_or_strtobool),
     "PYTORCH_GPU_MEM_FRAC": (1.0, float),
     "COMM_FEATURES_LAMMPS": (True, bool_or_strtobool),
-    "USE_POLYNOMIAL_INVARIANTS": (triton_and_cuda_available(), bool_or_strtobool),
-    "USE_TENSOR_MESSAGE_PASSING": (triton_and_cuda_available(), bool_or_strtobool),
+    # TODO: Turn off Nathan Custom Kernels by default to test the gradients first 
+    "USE_POLYNOMIAL_INVARIANTS": (False, bool_or_strtobool),
+    "USE_TENSOR_MESSAGE_PASSING": (False, bool_or_strtobool),
     "TENSOR_MESSAGE_PASSING_GRAD_ONLY": (False, bool_or_strtobool),
 }
 

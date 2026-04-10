@@ -8,6 +8,5 @@ dependencies:
     - lightning==2.6.*
     - wandb==0.23.*
     - numpy==2.3.*
-    - fairchem-core==2.13.*
     - ase==3.26.*
-    - git+https://github.com/karellat/hippynn.git@tkarella-o25
+    #- git+https://github.com/karellat/hippynn.git@tkarella-o25

@@ -236,7 +236,7 @@ if __name__ == "__main__":
     # Debug settings
     torch.set_default_dtype(torch.float32)
     torch.set_float32_matmul_precision('high')
-    hippynn.settings.WARN_LOW_DISTANCES = False
+    hippynn.settings.WARN_LOW_DISTANCES = True
 
     # Build parameters from args
     network_params = get_network_params(args)

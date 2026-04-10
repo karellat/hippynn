@@ -5,9 +5,8 @@ from torch.nn.functional import pad
 from tqdm import tqdm
 from typing import Optional
 from torch.utils.data import DataLoader
-from fairchem.core.datasets import AseDBDataset
-from fairchem.core.datasets.atomic_data import atomicdata_list_to_batch
-from fairchem.core.datasets.atomic_data import AtomicData
+from fairchem.ase_datasets import AseDBDataset
+from fairchem.atomic_data import atomicdata_list_to_batch, AtomicData
 
 from hippynn.databases import _Database
 
