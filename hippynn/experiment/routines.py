@@ -673,7 +673,8 @@ def setup_and_profile(
     
     print(f"\nProfile saved to: {trace_file}")
     print("Open chrome://tracing in Chrome to visualize.")
-    print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=15))
+    # TODO: Hot fix
+    #print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=15))
     
     return trace_file
 

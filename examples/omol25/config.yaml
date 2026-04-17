@@ -3,23 +3,30 @@
 # CLI arguments override values in this file
 
 # Directories
-test_dir: "/home/karella/Projects/hippynn/examples/omol25/test_folder"
+test_dir: "/p/lustre1/shinkle1/omol_run"
 checkpoint_dir: null  # Defaults to {test_dir}/checkpoints
 
 # Dataset paths
-train_path: "/home/karella/Projects/hippynn/train_4M"
-val_path: "/home/karella/Projects/hippynn/val"
-test_path: "/home/karella/Projects/hippynn/test"
+train_path: "/p/lustre1/shinkle1/omol_data/neutral_train_processed"
+val_path: "/p/lustre1/shinkle1/omol_data/neutral_val_processed"
+test_path: "/p/lustre1/shinkle1/omol_data/neutral_val_processed"
 henergy_init_path: null  # Defaults to {test_dir}/omol4M_hierarchical_energy_init.pt
+normalization-yaml-path: "/usr/workspace/mlmetal/shinkle_omol/omol-hippynn/examples/omol25/uma_v1_hof_lin_refs.yaml"
+
+# Debugging settings
+debug: false
+debug_batches_per_epoch: 10 
+profile_epochs: 10
+profile_workers: 0
 
 # Training parameters
-dl_num_workers: 32
+dl_num_workers: 16
 debug: false
 devices: 1
 nodes: 1
-max_epochs: 100
-batch_size: 456
-eval_batch_size: 16
+max_epochs: 1
+batch_size: 16000
+eval_batch_size: 256
 lr_rate: 0.001
 patience: 25
 termination_patience: 50
@@ -37,7 +44,6 @@ n_max: 3
 l_max: 2
 sensitivity_type: "inverse"
 no_resnet: false
-max_species: 90
 
 # WandB parameters
 wandb_project: "hippynn"
