@@ -11,19 +11,20 @@ from hippynn.experiment import HippynnLightningModule, setup_and_profile
 from hippynn.pretraining import hierarchical_energy_initialization
 from hippynn.plotting import SensitivityPlot, PlotMaker
 from Omol25_database import Omol25Database
-from common import parse_args, get_network_params, get_trainer_params
-
-from common import parse_args, get_network_params, get_trainer_params
-from Omol25_database import Omol25Database
+from common import (
+    configure_torch_memory_allocator,
+    get_network_params,
+    get_torch_backend,
+    get_trainer_params,
+    parse_args,
+)
     
 
 if __name__ == "__main__":
     # Parse arguments
     args = parse_args()
     # Set CUDA memory allocator configuration to combat fragmentation
-    if 'PYTORCH_CUDA_ALLOC_CONF' not in os.environ:
-        #NOTE: We might need something similar for AMDs, I didn't find the equivalent setting.  
-        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True,max_split_size_mb:128'
+    configure_torch_memory_allocator()
     
     if args.wandb:
         import wandb
@@ -32,6 +33,7 @@ if __name__ == "__main__":
     torch.set_default_dtype(torch.float32)
     torch.set_float32_matmul_precision('high')
     hippynn.settings.WARN_LOW_DISTANCES = True
+    print(f"Detected torch backend: {get_torch_backend()}")
 
     # Build parameters from args
     network_params = get_network_params(args)

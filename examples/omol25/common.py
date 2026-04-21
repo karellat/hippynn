@@ -1,5 +1,8 @@
 
 import argparse
+import os
+
+import torch
 import yaml
 # Parsing args
 def parse_args():
@@ -159,4 +162,42 @@ def get_trainer_params(args):
         })
     
     return params
+
+
+def get_torch_backend():
+    """Return the active PyTorch backend name for logging and configuration."""
+    hip_version = getattr(torch.version, "hip", None)
+    if hip_version:
+        return f"rocm (hip {hip_version})"
+    if torch.cuda.is_available():
+        cuda_version = getattr(torch.version, "cuda", None)
+        if cuda_version:
+            return f"cuda ({cuda_version})"
+        return "cuda"
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+def configure_torch_memory_allocator():
+    """Apply CUDA-specific allocator settings only when CUDA is actually in use."""
+    backend = get_torch_backend()
+    if backend.startswith("cuda"):
+        os.environ.setdefault(
+            "PYTORCH_CUDA_ALLOC_CONF",
+            "expandable_segments:True,max_split_size_mb:128",
+        )
+    elif backend.startswith("rocm"):
+        print("ROCm backend detected; skipping PYTORCH_CUDA_ALLOC_CONF.")
+
+
+def get_lightning_accelerator():
+    """Map the active backend to a Lightning accelerator string."""
+    backend = get_torch_backend()
+    if backend.startswith(("cuda", "rocm")):
+        return "gpu"
+    if backend.startswith("mps"):
+        return "mps"
+    return "cpu"
+
 
