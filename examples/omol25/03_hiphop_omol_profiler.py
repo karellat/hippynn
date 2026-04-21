@@ -119,7 +119,8 @@ if __name__ == "__main__":
                 stopping_key='loss'
             )
             experiment_params = hippynn.experiment.SetupParams(
-                controller=controller
+                controller=controller,
+                device="cuda" if args.devices > 0 else "cpu",
             )
         
 
