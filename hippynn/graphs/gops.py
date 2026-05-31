@@ -30,6 +30,7 @@ def get_subgraph(required_nodes: Collection[Node])->List[Node]:
     # The API using dot syntax will break.
     # Adding these to a GraphModule is not expensive - it adds a bit of unwrapping time.
 
+    # return list(set(subgraph_nodes))
     return list(set(subgraph_nodes))
 
 

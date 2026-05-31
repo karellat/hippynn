@@ -1,10 +1,13 @@
 """
 Implementation of HIPNN.
 """
+from __future__ import annotations # For database type hinting
+
 import warnings
 import torch
+from tqdm import tqdm
 
-from typing import Union, List
+from typing import Union, List, TYPE_CHECKING
 
 from ..layers.hiplayers import (
     GaussianSensitivityModule,
@@ -14,6 +17,9 @@ from ..layers.hiplayers import (
     InteractLayerQuad,
 )
 from ..layers.transform import ResNetWrapper
+
+if TYPE_CHECKING:
+    from ..databases import _Database
 
 
 # computes E0 for the energy layer.
@@ -55,6 +61,73 @@ def compute_hipnn_e0(encoder, Z_Data, en_data, peratom=False, fit_dtype=torch.fl
         e_per_species = e_per_species.T
 
     e_per_species = e_per_species.to(original_dtype)
+    return e_per_species
+
+# computes E0 for the energy layer.
+def compute_hipnn_e0_sequentially(encoder,
+                                  database: _Database,
+                                  species_name: str, 
+                                  energy_name: str,
+                                  peratom: bool = False,
+                                  batch_size: int = 16384,
+                                  fit_dtype=torch.float64):
+
+    """
+    :param Z_Data: species data
+    :param database: database with energy data, expecting train_dataloader
+    :param peratom: whether energy is per-atom or total
+    :return: energy per species as shape (n_features_encoded, 1)
+    """ 
+    # Create a dataloader, check that database is type _Database 
+    assert hasattr(database, "make_generator"), "Database must be of type _Database to compute E0 sequentially."
+    assert hasattr(database, "var_list"), "Database must have var_list attribute to compute E0 sequentially."
+
+    train_dataloader = database.make_generator(split_name="train",
+                                               evaluation_mode="eval",
+                                               batch_size=batch_size)
+    assert energy_name in database.var_list, f"Energy name {energy_name} not found in database data keys {database.var_list}"
+    assert species_name in database.var_list, f"Species name {species_name} not found in database data keys {database.var_list}"
+    energy_idx = database.var_list.index(energy_name)
+    species_idx = database.var_list.index(species_name)
+    n_species = encoder.n_species - 1 # minus blank species
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    ZTZ = torch.zeros((n_species, n_species), dtype=fit_dtype,device=device)   # [D, D]
+    ZTy = torch.zeros((n_species, 1), dtype=fit_dtype, device=device)   # [D, n_targets]
+ 
+    original_dtype = None
+    for batch in tqdm(train_dataloader, desc="Computing HIPNN E0 sequentially"):
+        # FIXME: Adjust cuda, this is temporary fix
+        # Run on cuda if available
+        encoder.to(device)
+        z_vals = batch[species_idx].to(device)
+        y = batch[energy_idx].to(device)
+
+        original_dtype = y.dtype if original_dtype is None else original_dtype
+        y = y.to(fit_dtype)
+        x, nonblank = encoder(z_vals)
+        
+        sums = x.sum(dim=1).to(fit_dtype)
+        if peratom:
+            atom_counts = nonblank.sum(dim=1, keepdims=True).to(fit_dtype)
+            Z_matrix = sums / atom_counts
+        else: 
+            Z_matrix = sums
+
+        # Accumulate X^T X: [D, D], X^T y: [D, n_targets]
+        ZTZ += Z_matrix.T @ Z_matrix
+        ZTy += Z_matrix.T @ y
+
+    # Solve Weights
+    ZTZ_inv = torch.pinverse(ZTZ)
+    e_per_species = ZTZ_inv @ ZTy
+
+    if e_per_species.ndim != 1:
+        # if n_targets is included
+        e_per_species = e_per_species.T
+
+    e_per_species = e_per_species.cpu().to(original_dtype)
+    encoder.to('cpu')
+
     return e_per_species
 
 

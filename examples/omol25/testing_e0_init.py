@@ -1,12 +1,15 @@
-'''
-To obtain the data files needed for this example, use the script process_QM7_data.py, 
-also located in this folder. The script contains further instructions for use.
-'''
 
-PERFORM_PLOTTING = True  # Make sure you have matplotlib if you want to set this to TRUE
 
-#### Setup pytorch things
 import torch
+
+from hippynn.graphs.nodes.base.node_functions import _BaseNode
+
+from hippynn.graphs.nodes.base import _BaseNode
+from hippynn.graphs.nodes.tags import Encoder
+from hippynn.graphs.nodes.inputs import SpeciesNode, PositionsNode, CellNode, ForceNode
+from hippynn.graphs import find_unique_relative, Predictor
+
+from hippynn.networks.hipnn import compute_hipnn_e0, compute_hipnn_e0_sequentially
 
 torch.set_default_dtype(torch.float32)
 
@@ -26,6 +29,7 @@ with hippynn.tools.active_directory(netname):
         # Hyperparameters for the network
 
         network_params = {
+            # Note: First element is the blank species
             "possible_species": [0, 1, 6, 7, 8, 16],  # Z values of the elements
             "n_features": 20,  # Number of neurons at each layer
             "n_sensitivities": 20,  # Number of sensitivity functions in an interaction layer
@@ -90,35 +94,11 @@ with hippynn.tools.active_directory(netname):
         }
         early_stopping_key = "Loss-Err"
 
-        if PERFORM_PLOTTING:
-
-            from hippynn import plotting
-
-            plot_maker = plotting.PlotMaker(
-                # Simple plots which compare the network to the database
-                plotting.Hist2D.compare(molecule_energy, saved=True),
-                # Slightly more advanced control of plotting!
-                plotting.Hist2D(
-                    true_per_atom,
-                    pred_per_atom,
-                    xlabel="True Energy/Atom",
-                    ylabel="Predicted Energy/Atom",
-                    saved="PerAtomEn.pdf",
-                ),
-                plotting.HierarchicalityPlot(
-                    hierarchicality.pred, molecule_energy.pred - molecule_energy.true, saved="HierPlot.pdf"
-                ),
-                plot_every=10,  # How often to make plots -- here, epoch 0, 10, 20...
-            )
-        else:
-            plot_maker = None
-
         from hippynn.experiment import assemble_for_training
 
         # This piece of code glues the stuff together as a pytorch model,
         # dropping things that are irrelevant for the losses defined.
-        training_modules, db_info = assemble_for_training(train_loss, validation_losses, plot_maker=plot_maker)
-        training_modules[0].print_structure()
+        training_modules, db_info = assemble_for_training(train_loss, validation_losses)
 
         max_batch_size = 12
         database_params = {
@@ -139,59 +119,44 @@ with hippynn.tools.active_directory(netname):
         # Now that we have a database and a model, we can
         # Fit the non-interacting energies by examining the database.
 
-        from hippynn.pretraining import hierarchical_energy_initialization
+        # Cut the hierarchical energy term out for testing
+        energy_module = henergy
+        encoder = None
+        species_name = None
+        energy_name = None
+        for peratom in [False, True]:
+            if isinstance(energy_module, _BaseNode):
+                if encoder is None:
+                    encoder = find_unique_relative(energy_module, Encoder, "Constructing E0 Values")
+                if species_name is None:
+                    species_name = find_unique_relative(energy_module, SpeciesNode, "Constructing E0 Values").db_name
+                if energy_name is None:
+                    energy_name = energy_module.main_output.db_name
 
-        hierarchical_energy_initialization(henergy, database, trainable_after=False)
+                energy_module = energy_module.torch_module
 
-        min_epochs = 50
-        max_epochs = 800
-        patience_epochs = 20
+            if isinstance(encoder, _BaseNode):
+                encoder = encoder.torch_module
 
-        from hippynn.experiment.controllers import RaiseBatchSizeOnPlateau, PatienceController
+            # If model has E0 term, set its initial value using the database provided
+            if not energy_module.first_is_interacting:
+                if database is None:
+                    raise ValueError("Database must be provided if model includes E0 energy term.")
+            
+                # TODO: Switch this and test on known datasets
+                if database.is_in_memory: 
+                    # Load all training data at once
+                    train_data = database.splits["train"]
 
-        optimizer = torch.optim.Adam(training_modules.model.parameters(), lr=1e-3)
+                    z_vals = train_data[species_name]
+                    t_vals = train_data[energy_name]
 
-        scheduler = RaiseBatchSizeOnPlateau(
-            optimizer=optimizer,
-            max_batch_size=80,
-            patience=5,
-        )
-
-        controller = PatienceController(
-            optimizer=optimizer,
-            scheduler=scheduler,
-            batch_size=10,
-            eval_batch_size=512,
-            max_epochs=1000,
-            termination_patience=20,
-            fraction_train_eval=0.1,
-            stopping_key=early_stopping_key,
-        )
-
-        experiment_params = hippynn.experiment.SetupParams(
-            controller=controller,
-        )
-        print(experiment_params)
-
-        # Parameters describing the training procedure.
-        from hippynn.experiment import setup_and_train
-
-        setup_and_train(
-            training_modules=training_modules,
-            database=database,
-            setup_params=experiment_params,
-        )
-
-        # Making predictions on a database using the trained model
-
-        pred = hippynn.graphs.Predictor.from_graph(training_modules.model)
-
-        # `apply_to_database` applies the model to each split in the database and returns a dictionary
-        outputs = pred.apply_to_database(database)
-
-        # The dictionary for the test split
-        test_outputs = outputs["test"]
-
-        # Get outputs from the database.
-        test_hier_predicted = test_outputs[hierarchicality]
-        test_energy_predicted = test_outputs[molecule_energy]
+                    encoder.to(t_vals.device)
+                    eovals_memory = compute_hipnn_e0(encoder, z_vals, t_vals, peratom=peratom)
+                    eovals_sequential = compute_hipnn_e0_sequentially(encoder,
+                                                        database,
+                                                        species_name=species_name,
+                                                        energy_name=energy_name,
+                                                        peratom=peratom)
+                    # Check that both methods give the same result
+                    torch.testing.assert_close(eovals_memory, eovals_sequential, msg="E0 values computed from in-memory and sequential methods do not match peratom={peratom}.")

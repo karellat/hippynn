@@ -108,7 +108,8 @@ def setup_and_train(
     setup_params: SetupParams,
     store_all_better=False,
     store_best=True,
-    store_every=0
+    store_every=0,
+    callbacks=None,
 ):
     """
     :param: training_modules: see :func:`setup_training`
@@ -141,7 +142,7 @@ def setup_and_train(
         database=database,
         controller=controller,
         metric_tracker=metric_tracker,
-        callbacks=None,
+        callbacks=callbacks,
         batch_callbacks=None,
         store_all_better=store_all_better,
         store_best=store_best,
@@ -672,7 +673,8 @@ def setup_and_profile(
     
     print(f"\nProfile saved to: {trace_file}")
     print("Open chrome://tracing in Chrome to visualize.")
-    print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=15))
+    # TODO: Hot fix
+    #print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=15))
     
     return trace_file
 

@@ -9,7 +9,8 @@ Organized datasets for training and prediction.
    to control this behavior.
 
 """
-from .database import Database
+# TODO: Remove _Database 
+from .database import Database, _Database
 from .ondisk import DirectoryDatabase, NPZDatabase
 has_ase = False
 has_h5 = False
@@ -28,7 +29,8 @@ if has_ase:
     if has_h5:
         from .h5_pyanitools import PyAniFileDB, PyAniDirectoryDB
 
-all_list = ["Database", "DirectoryDatabase", "NPZDatabase"]
+# TODO: Remove _Database or keep 
+all_list = ["Database", "DirectoryDatabase", "NPZDatabase", "_Database"]
 
 if has_ase:
     all_list += ["AseDatabase", "AseDatabaseIterable", "SNAPDirectoryDatabase"]

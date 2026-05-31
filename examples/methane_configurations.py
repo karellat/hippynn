@@ -40,6 +40,7 @@ from hippynn.experiment.controllers import RaiseBatchSizeOnPlateau, PatienceCont
 from hippynn.plotting import PlotMaker, Hist2D, SensitivityPlot
 from hippynn.pretraining import set_e0_values
 from hippynn.tools import active_directory
+import argparse
 
 # ----- Constants -----
 TOTAL_NUM_SAMPLES = 7_732_488 
@@ -64,7 +65,7 @@ hiphop_n_max = 4 # these will not be used if network_class != HipHopnn
 
 network_params = {
     "possible_species": [0, 1, 6],
-    "n_features": 32,
+    "n_features": 32, #42,
     "n_sensitivities": 20,
     "dist_soft_min": 0.4,
     "dist_soft_max": 9.0,
@@ -153,17 +154,18 @@ henergy = targets.HEnergyNode(
     "HEnergy", network, db_name="energy", first_is_interacting=True
 )
 
-force = physics.GradientNode("forces", (henergy, positions), sign=-1, db_name="forces")
 
-# define loss quantities
-mse_force = loss.MSELoss.of_node(force)
-rmse_force = mse_force ** (1 / 2)
-mae_force = loss.MAELoss.of_node(force)
-rsq_force = loss.Rsq.of_node(force)
+# Extract individual parameters
+seed = params.seed
+train_data = f"{params.train_file_name}_{params.data_size}_{params.data_split}.npz"
+model_save_folder = params.model_save_folder
+n_epochs = params.n_epochs
+data_size = params.data_size
+test_data = params.test_data
 
-rmse_energy = loss.MSELoss.of_node(henergy) ** (1 / 2)
-mae_energy = loss.MAELoss.of_node(henergy)
-rsq_energy = loss.Rsq.of_node(henergy)
+# ----- Construct model -----
+torch.random.manual_seed(seed)
+wandb_settings = wandb.Settings(_disable_stats=True, save_code=False, _disable_meta=True,x_save_requirements=False)
 
 loss_energy = rmse_energy + mae_energy
 loss_force = rmse_force + mae_force

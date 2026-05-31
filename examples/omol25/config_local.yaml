@@ -1,0 +1,50 @@
+# HipHopNN Training Configuration
+# Use with: python MyExample.py --config config.yaml
+# CLI arguments override values in this file
+
+# Directories
+test_dir: "/home/karella/Projects/hippynn/examples/omol25/test_folder"
+checkpoint_dir: null  # Defaults to {test_dir}/checkpoints
+
+# Dataset paths
+rain_path: "/home/karella/Projects/hippynn/dataset/omol_bensneutral_train"
+val_path: "/home/karella/Projects/hippynn/dataset/omol_bensneutral_val"
+test_path: "/home/karella/Projects/hippynn/dataset/omol_bensneutral_val"
+henergy_init_path: null  # Defaults to {test_dir}/omol4M_hierarchical_energy_init.pt
+normalization-yaml-path: null # Defaults to {test_dir}/uma_v1_hof_lin_refs.yaml
+
+# Debugging settings
+debug: false
+debug_batches_per_epoch: 10 
+profile_epochs: 10
+profile_workers: 0
+
+# Training parameters
+dl_num_workers: 16
+devices: 1
+nodes: 1
+max_epochs: 1
+batch_size: 256
+eval_batch_size: 256
+lr_rate: 0.001
+patience: 25
+termination_patience: 50
+n_atom_max: 350
+
+# Network parameters
+n_features: 128
+n_sensitivities: 20
+dist_soft_min: 0.8
+dist_soft_max: 5.5
+dist_hard_max: 6.5
+n_interaction_layers: 2
+n_atom_layers: 5
+n_max: 3
+l_max: 2
+sensitivity_type: "inverse"
+no_resnet: false
+
+# WandB parameters
+wandb_project: "hippynn"
+wandb_name: "HipHopNN-DDP"
+wandb_entity: "karella"

@@ -1,5 +1,4 @@
 numpy
-pytorch >= 2.0
 torchtriton
 matplotlib
 numba

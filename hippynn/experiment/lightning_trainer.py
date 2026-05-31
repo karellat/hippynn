@@ -75,8 +75,8 @@ class HippynnLightningModule(pl.LightningModule):
 
         self._last_reload_dlene = None  # storage for whether batch size should be changed.
 
-        # Storage for predictions across batches for eval mode.
-        self.eval_step_outputs = []
+        # Storage for accumulated losses across batches for eval mode.
+        self.eval_loss_accum = None  # Will hold (sum_of_losses, total_count)
         self.controller.optimizer = None
 
         for optimizer in self.optimizer_list:
@@ -155,7 +155,7 @@ class HippynnLightningModule(pl.LightningModule):
             return NotImplemented("arbitrary callbacks are not yet supported with pytorch lightning.")
 
         if database is not None:
-            database = HippynnDataModule(database, controller.batch_size)
+            database = HippynnDataModule(database, controller.batch_size, eval_batch_size=controller.eval_batch_size)
 
         return trainer, database
 
@@ -285,6 +285,12 @@ class HippynnLightningModule(pl.LightningModule):
         batch_train_loss = self.loss(*batch_model_outputs, *batch_targets)[0]
 
         self.log("train_loss", batch_train_loss)
+        # TODO: Add the metrics too
+        
+        # Clear intermediate outputs to reduce memory fragmentation
+        # TODO: Leave this to OOM 
+        # del batch_model_outputs, batch_inputs, batch_targets
+        
         return batch_train_loss
 
     def _eval_step(self, batch, batch_idx):
@@ -292,15 +298,26 @@ class HippynnLightningModule(pl.LightningModule):
         batch_inputs = batch[: self.n_inputs]
         batch_targets = batch[-self.n_targets :]
 
+
         # It is very, very common to fit to derivatives, e.g. force, in hippynn. Override lightning default.
         with torch.autograd.set_grad_enabled(True):
             batch_predictions = self.model(*batch_inputs)
 
-        batch_predictions = [bp.detach() for bp in batch_predictions]
+        # Compute losses for this batch immediately to avoid memory accumulation
+        # TODO: Do we need this item call? Try to remove it.
+        batch_losses = [x.item() for x in self.eval_loss(*batch_predictions, *batch_targets)]
+        batch_size = batch_inputs[0].shape[0]
 
-        outputs = (batch_predictions, batch_targets)
-        self.eval_step_outputs.append(outputs)
-        return batch_predictions
+        # TODO: Check the metrics calculation
+        if self.eval_loss_accum is None:
+            self.eval_loss_accum = ([loss * batch_size for loss in batch_losses], batch_size)
+        else:
+            current_sums, current_count = self.eval_loss_accum
+            new_sums = [s + loss * batch_size for s, loss in zip(current_sums, batch_losses)]
+            self.eval_loss_accum = (new_sums, current_count + batch_size)
+
+        # Don't return predictions - Lightning would cache them causing OOM
+        return
 
     def validation_step(self, batch, batch_idx):
         """
@@ -321,19 +338,10 @@ class HippynnLightningModule(pl.LightningModule):
         return self._eval_step(batch, batch_idx)
 
     def _eval_epoch_end(self, prefix):
-
-        all_batch_predictions, all_batch_targets = zip(*self.eval_step_outputs)
-        # now 'shape' (n_batch, n_outputs) -> need to transpose.
-        all_batch_predictions = [[bpred[i] for bpred in all_batch_predictions] for i in range(self.n_outputs)]
-        # now 'shape' (n_batch, n_targets) -> need to transpose.
-        all_batch_targets = [[bpred[i] for bpred in all_batch_targets] for i in range(self.n_targets)]
-
-        # now cat each prediction and target across the batch index.
-        all_predictions = [torch.cat(x, dim=0) if x[0].shape != () else x[0] for x in all_batch_predictions]
-        all_targets = [torch.cat(x, dim=0) for x in all_batch_targets]
-
-        all_losses = [x.item() for x in self.eval_loss(*all_predictions, *all_targets)]
-        self.eval_step_outputs.clear()  # free memory
+        # Compute final averaged losses from accumulated values
+        loss_sums, total_count = self.eval_loss_accum
+        all_losses = [s / total_count for s in loss_sums]
+        self.eval_loss_accum = None
 
         loss_dict = {name: value for name, value in zip(self.eval_names, all_losses)}
 
@@ -453,10 +461,11 @@ class LightingPrintStagesCallback(pl.Callback):
 
 
 class HippynnDataModule(pl.LightningDataModule):
-    def __init__(self, database: Database, batch_size):
+    def __init__(self, database: Database, batch_size, eval_batch_size=None):
         super().__init__()
         self.database = database
         self.batch_size = batch_size
+        self.eval_batch_size = eval_batch_size if eval_batch_size is not None else batch_size
 
     def train_dataloader(self):
         """
@@ -470,11 +479,11 @@ class HippynnDataModule(pl.LightningDataModule):
 
         :return:
         """
-        return self.database.make_generator("valid", "eval", self.batch_size)
+        return self.database.make_generator("valid", "eval", self.eval_batch_size)
 
     def test_dataloader(self):
         """
 
         :return:
         """
-        return self.database.make_generator("test", "eval", self.batch_size)
+        return self.database.make_generator("test", "eval", self.eval_batch_size)
